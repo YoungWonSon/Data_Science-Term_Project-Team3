@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 # CSV 파일 불러오기
-df = pd.read_csv("Iran_War_Global_Fuel_Crisis_Dirty_Dataset.csv", encoding="utf-8")
+df = pd.read_csv("/Users/seojang-won/Downloads/Iran_War_Global_Fuel_Crisis_Dirty_Dataset.csv", encoding="utf-8")
 
 # 1. 데이터 기본 정보 확인
 
@@ -61,13 +61,25 @@ plt.show()
 # 7. 상관관계 히트맵
 
 # 수치형 변수 간 상관관계 분석
-plt.figure(figsize=(12,8))
+plt.figure(figsize=(13,9))
 
 sns.heatmap(
     df.corr(numeric_only=True),
     annot=True,
-    cmap="coolwarm"
+    cmap="coolwarm",
+    fmt=".2f"
 )
 
-plt.title("Correlation Heatmap")
+# x축 글씨 회전 및 크기 조절
+plt.xticks(rotation=45, ha='right', fontsize=8)
+
+# y축 글씨 크기 조절
+plt.yticks(rotation=0, fontsize=9)
+
+# 제목
+plt.title("Correlation Heatmap", fontsize=16)
+
+# 자동 여백 조정
+plt.tight_layout()
+
 plt.show()
