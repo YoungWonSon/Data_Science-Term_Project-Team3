@@ -1,19 +1,11 @@
-# 표준화
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 
 df = pd.read_csv("Iran_War_Global_Fuel_Crisis_Dirty_Dataset.csv", encoding="utf-8")
-print("Original Data Shape:", df.shape)
-print(df.head())
-
-# Country = one-hot encoding
 country_encoded = pd.get_dummies(df["Country"], prefix="Country", dtype=int)
-
-# 표준화할 숫자형 컬럼 선택
-numeric_cols = df.drop(columns=["Date", "Country"]).select_dtypes(include=["int64", "float64"]).columns
-
-print("\nStandardized Columns:")
-print(list(numeric_cols))
+numeric_cols = df.drop(columns=["Date", "Country"]).select_dtypes(
+    include=["int64", "float64"]
+).columns
 
 # StandardScaler로 표준화
 scaler = StandardScaler()
@@ -33,9 +25,15 @@ df_standardized = pd.concat(
     axis=1
 )
 
-# 결과 확인
-print("\nStandardized Data Shape:", df_standardized.shape)
-print(df_standardized.head())
+if __name__ == "__main__":
+    print("Original Data Shape:", df.shape)
+    print(df.head())
+
+    print("\nStandardized Columns:")
+    print(list(numeric_cols))
+
+    print("\nStandardized Data Shape:", df_standardized.shape)
+    print(df_standardized.head())
 
 '''
 #데이터 전체적 분포 확인
