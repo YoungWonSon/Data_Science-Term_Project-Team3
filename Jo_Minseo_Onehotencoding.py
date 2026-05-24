@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import LabelEncoder, OneHotEncoder
+from sklearn.preprocessing import OneHotEncoder
 
 df = pd.read_csv("Iran_War_Global_Fuel_Crisis_Dirty_Dataset.csv", encoding="utf-8")
 
@@ -9,6 +9,8 @@ print(df.dtypes)
 
 # 'Country' feature를 category 타입으로 변환해야하는 경우
 #df['Country'] = df['Country'].astype('category')
+
+#Country feature는 순위가 매겨지지 않으므로 label encoding이 아닌 one-hot encoding을 사용해야 함
 
 #https://scikit-learn.org/stable/modules/generated/sklearn.preprocessing.OneHotEncoder.html
 #OneHotEncoder(): 범주형 데이터를 0과 1로 이루어진 벡터로 변환, Country는 순위가 정해져 있지 않으므로 label encoding이 아닌 one-hot encoding을 사용해야 함
