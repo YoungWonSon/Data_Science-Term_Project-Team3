@@ -2,7 +2,7 @@ import pandas as pd
 
 df = pd.read_csv("Iran_War_Global_Fuel_Crisis_Dirty_Dataset.csv", encoding="utf-8")
 
-# 각 컬럼별 결측치 개수와 결측치 존재하넌 컬럼 확인
+# 각 컬럼별 결측치 개수와 결측치가 존재하는 컬럼 확인
 print("\nMissing Values:")
 print(df.isnull().sum())
 
@@ -20,7 +20,7 @@ df = df.sort_values(['Country', 'Date'])
 #groupby('Country')로 국가별로 그룹화한 후, transform(lambda x: x.fillna(method='ffill').fillna(method='bfill'))로 각 그룹에 대해 먼저 ffill을 적용하여 이전 값으로 결측치를 채우고, 앞의 값으로 채워지지 않는 결측치는 bfill로 뒤의 값으로 채움
 df[cols] = df.groupby('Country')[cols].transform(lambda x: x.fillna(method='ffill').fillna(method='bfill'))
 
-# 각 컬럼별 결측치 개수와 결측치 존재하넌 컬럼 확인
+# 각 컬럼별 결측치 개수와 결측치가 존재하는 컬럼 확인
 print("\nMissing Values:")
 print(df.isnull().sum())
 
