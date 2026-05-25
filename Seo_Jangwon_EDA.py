@@ -85,3 +85,45 @@ plt.yticks(rotation=0, fontsize=9)
 plt.title("Correlation Heatmap", fontsize=16)
 plt.tight_layout()
 plt.show()
+
+# 결측치 히트맵 시각화
+
+# 데이터셋에서 결측치가 어느 위치에 존재하는지 시각적으로 확인한다.
+# True 값은 결측치가 있는 부분이고, False 값은 정상 데이터가 있는 부분이다.
+# 결측치가 특정 컬럼에 집중되어 있는지 확인할 수 있다.
+plt.figure(figsize=(12,6))
+
+sns.heatmap(
+    df.isnull(),
+    cbar=False
+)
+
+plt.title("Missing Value Heatmap", fontsize=16)
+plt.xlabel("Columns")
+plt.ylabel("Rows")
+
+plt.tight_layout()
+plt.show()
+
+# 국가별 평균 현지 연료 가격 분석
+
+# Country 컬럼을 기준으로 데이터를 그룹화한 뒤,
+# 각 국가별 Fuel_Price_Local의 평균값을 계산한다.
+# 이를 통해 국가별 연료 가격 수준 차이를 비교할 수 있다.
+country_avg = df.groupby("Country")["Fuel_Price_Local"].mean()
+
+# 국가별 평균 연료 가격을 막대그래프로 시각화한다.
+# 국가별 가격 차이가 크기 때문에 한눈에 데이터 스케일 차이를 확인 가능
+plt.figure(figsize=(10,5))
+
+country_avg.plot(kind="bar")
+
+plt.title("Average Fuel Price by Country", fontsize=16)
+plt.xlabel("Country")
+plt.ylabel("Average Fuel Price Local")
+
+# x축 국가 이름이 겹치지 않도록 회전(미세조정)
+plt.xticks(rotation=45, ha="right")
+
+plt.tight_layout()
+plt.show()
