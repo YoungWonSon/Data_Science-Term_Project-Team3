@@ -58,11 +58,21 @@ plt.show()
 
 
 # 박스플롯 시각화
-# Fuel_Price_Change_Percent 컬럼의 이상치를 시각적으로 확인한다.
-# 박스플롯에서 멀리 떨어진 점은 극단적인 이상치로 볼 수 있다.
+
+# 999 이상치를 제외한 정상 데이터만 선택
+filtered_data = df[df["Fuel_Price_Change_Percent"] < 100]
+
+# Fuel_Price_Change_Percent 이상치 확인
 plt.figure(figsize=(8,5))
-sns.boxplot(x=df["Fuel_Price_Change_Percent"])
+
+sns.boxplot(
+    x=filtered_data["Fuel_Price_Change_Percent"]
+)
+
 plt.title("Fuel Price Change Percent Boxplot")
+plt.xlabel("Fuel Price Change Percent")
+
+plt.tight_layout()
 plt.show()
 
 
@@ -86,21 +96,23 @@ plt.title("Correlation Heatmap", fontsize=16)
 plt.tight_layout()
 plt.show()
 
+
 # 결측치 히트맵 시각화
 
-# 데이터셋에서 결측치가 어느 위치에 존재하는지 시각적으로 확인한다.
-# True 값은 결측치가 있는 부분이고, False 값은 정상 데이터가 있는 부분이다.
-# 결측치가 특정 컬럼에 집중되어 있는지 확인할 수 있다.
-plt.figure(figsize=(12,6))
+plt.figure(figsize=(14,6))
 
 sns.heatmap(
     df.isnull(),
-    cbar=False
+    yticklabels=False,   # y축 숫자 제거
+    cbar=False,
+    cmap="viridis"
 )
 
 plt.title("Missing Value Heatmap", fontsize=16)
 plt.xlabel("Columns")
 plt.ylabel("Rows")
+
+plt.xticks(rotation=45, ha="right")
 
 plt.tight_layout()
 plt.show()
