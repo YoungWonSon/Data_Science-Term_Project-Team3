@@ -213,14 +213,14 @@ regression_outputs/
 Place the code file and dataset file in the same directory:
 
 ```text
-Kwon_Keonho_Regression_OpenSource_with_Team_References.py
+Kwon_Keonho_Regression_OpenSource.py
 Iran_War_Global_Fuel_Crisis_Dirty_Dataset.csv
 ```
 
 Run the script:
 
 ```bash
-python Kwon_Keonho_Regression_OpenSource_with_Team_References.py
+python Kwon_Keonho_Regression_OpenSource.py
 ```
 
 After execution, result files will be generated in:
