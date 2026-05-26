@@ -17,7 +17,7 @@ Some columns contained missing values and error-type values (999.0, -99.0), and 
 # 5. Regression Modeling & Open Source SW Lead
 
 **Author:** Kwon Keonho  
-**Main Code:** `Kwon_Keonho_Regression_OpenSource_with_Team_References.py`  
+**Main Code:** `Kwon_Keonho_Regression_OpenSource.py`  
 **Required Dataset:** `Iran_War_Global_Fuel_Crisis_Dirty_Dataset.csv`
 
 ---
