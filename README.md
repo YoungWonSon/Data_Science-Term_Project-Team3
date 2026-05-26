@@ -14,68 +14,128 @@ To analyze the impact of global external shocks on domestic oil prices, building
 Oil price related variables showed strong positive correlations, while stock market index changes showed negative correlations with crisis-related variables.
 Some columns contained missing values and error-type values (999.0, -99.0), and large fluctuations were preserved because they may represent real crisis situations.
 
+# 5. Regression Modeling & Open Source SW Lead
 
-# 5. Regression Modeling & Open Source SW Lead – Kwon Keonho
+**Author:** Kwon Keonho  
+**Main Code:** `Kwon_Keonho_Regression_OpenSource_with_Team_References.py`  
+**Required Dataset:** `Iran_War_Global_Fuel_Crisis_Dirty_Dataset.csv`
 
-## Role Summary
+---
 
-This section describes the work completed by **Kwon Keonho** as the **Regression Modeling & Open Source SW Lead** in Team 3's Data Science Term Project.
+## 5.1 Role Overview
 
-The main responsibility of this role was to build a regression-based prediction module that estimates the **concrete next-day fuel price change amount** and to organize the final code in an open-source style structure.
+This module was developed for the **Regression Modeling & Open Source SW Lead** role in Team 3's Data Science Term Project.
 
-## Module Objective
+The main purpose of this part is to predict the **concrete next-day local fuel price change amount** and to organize the regression process as a reusable open-source style pipeline.
 
-The regression module predicts how much the local fuel price will change on the next day.
+This code integrates:
 
-The target variable is defined as:
+- data cleaning
+- missing value handling
+- categorical encoding
+- feature scaling
+- regression target generation
+- model training and testing
+- cross-validation
+- model combination comparison
+- evaluation metric calculation
+- output file generation
+
+into one top-level function.
+
+---
+
+## 5.2 Prediction Target
+
+The regression target variable is:
 
 ```text
 Next_Day_Fuel_Change_Amount
 = next day's Fuel_Price_Local - today's Fuel_Price_Local
 ```
 
-This means the model does not only predict whether the fuel price increases or decreases.  
-It predicts the actual amount of price movement.
+This means the model predicts **how much the local fuel price will change on the next day**, rather than only predicting whether the price will rise or fall.
 
-## Main Code File
+---
 
-```text
-Kwon_Keonho_Regression_OpenSource.py
-```
+## 5.3 Main Top-Level Function
 
-This file contains the final regression pipeline for the project.
-
-## Main Top-Level Function
+The full regression workflow is executed by one function:
 
 ```python
 run_fuel_price_regression_pipeline()
 ```
 
-This function runs the full regression process in one workflow:
+### Function Parameters
+
+| Parameter | Default | Description |
+|---|---:|---|
+| `csv_path` | `Iran_War_Global_Fuel_Crisis_Dirty_Dataset.csv` | Path to the dirty dataset CSV file |
+| `test_size` | `0.2` | Ratio of test data |
+| `cv` | `5` | Number of folds for cross-validation |
+| `random_state` | `42` | Random seed for reproducibility |
+| `output_dir` | `regression_outputs` | Folder for saved result files |
+| `save_outputs` | `True` | Saves CSV results and plot image when True |
+| `include_polynomial` | `False` | Also compares Polynomial Regression Degree 2 when True |
+
+---
+
+## 5.4 Internal Team Code References
+
+This code reuses and extends several team members' code ideas. The source of each reused or adapted part is clearly documented inside the Python code.
+
+| Used Part | Internal Reference Code | How It Was Used |
+|---|---|---|
+| EDA and dirty value detection | `Seo_Jangwon_EDA.py` | Used as a reference for checking dataset structure, missing values, and abnormal values such as `999.0` and `-99.0` |
+| Missing value handling | `Jo_Minseo_fillna.py` | Used as a reference for country-level time-series missing value handling |
+| One-hot encoding | `Jo_Minseo_Onehotencoding.py` | Used as a reference for applying one-hot encoding to the `Country` column |
+| Scaling strategy | `Jo_Minseo_Scaling.py`, `Kim_Dana_Standarization_Data.py` | Used as references for StandardScaler, RobustScaler, and standardized data construction |
+| Outlier handling | `Jo_Minseo_Outlier.py`, `Jo_Minseo_Outlierdelete.py` | Used as references for detecting and handling error-type outliers |
+| Baseline regression | `KIm_Dana_Multi-Linear-Regression.py` | Extended from the baseline multiple linear regression structure |
+
+This module does not simply duplicate the baseline regression code. It extends the regression task by redefining the target variable as `Next_Day_Fuel_Change_Amount` and combining preprocessing, model comparison, evaluation, and output saving into a single reusable pipeline.
+
+---
+
+## 5.5 Preprocessing Workflow
+
+### 1. Dirty Value Cleaning
+
+The following values are treated as obvious error-type dirty values:
 
 ```text
-Data loading
-→ Dirty value cleaning
-→ Missing value handling
-→ Target variable generation
-→ Encoding and scaling
-→ Regression model training
-→ Cross-validation
-→ Final evaluation
-→ Output saving
+Fuel_Price_Change_Percent == 999.0
+News_Sentiment_Score == -99.0
 ```
 
-## Preprocessing Included
+These values are converted to `NaN` and later handled during preprocessing. Extreme values are also clipped to reduce excessive influence on the regression model.
 
-The module includes the following preprocessing steps:
+### 2. Missing Value Handling
 
-- Converts obvious dirty values such as `999.0` and `-99.0` into missing values
-- Handles missing values by country-level time-series interpolation and fill methods
-- Applies one-hot encoding to the `Country` column
-- Applies feature scaling using `StandardScaler` or `RobustScaler`
-- Creates the regression target variable from country-level next-day fuel price changes
+Missing numeric time-series values are filled by country using the following order:
 
-## Regression Model
+```text
+country-level linear interpolation
+→ forward fill / backward fill
+→ global median replacement if needed
+```
+
+### 3. Categorical Encoding
+
+The `Country` column is encoded using one-hot encoding because country names do not have ordinal meaning.
+
+### 4. Feature Scaling
+
+The pipeline compares two scaling methods:
+
+- `StandardScaler`
+- `RobustScaler`
+
+This helps reduce scale differences among crude oil prices, exchange rates, local fuel prices, and other numerical indicators.
+
+---
+
+## 5.6 Regression Models
 
 The main model used in this module is:
 
@@ -83,60 +143,95 @@ The main model used in this module is:
 Multiple Linear Regression
 ```
 
-The module also supports optional polynomial regression, but it is turned off by default to keep the final version simple and efficient.
-
-## Model Comparison
-
-The code compares multiple combinations of:
-
-- Feature sets
-- Missing value strategies
-- Scaling methods
-- Regression model settings
-
-The best model is selected based mainly on cross-validation RMSE and final test RMSE.
-
-## Evaluation Metrics
-
-The regression model is evaluated with:
-
-| Metric | Meaning |
-|---|---|
-| MAE | Mean Absolute Error |
-| MSE | Mean Squared Error |
-| RMSE | Root Mean Squared Error |
-| R² | Coefficient of Determination |
-
-These metrics are used to measure how accurately the model predicts the next-day fuel price change amount.
-
-## Output Files
-
-After running the code, the following files are generated in the `regression_outputs/` folder:
-
-| File | Description |
-|---|---|
-| `all_regression_model_results.csv` | Full results of all tested model combinations |
-| `top5_regression_model_results.csv` | Top 5 model combinations |
-| `regression_predictions.csv` | Actual values, predicted values, and residuals |
-| `top30_regression_coefficients.csv` | Major regression coefficients |
-| `actual_vs_predicted.png` | Actual vs predicted visualization |
-
-## How to Run
-
-Place the following files in the same folder:
+The code also supports:
 
 ```text
-Kwon_Keonho_Regression_OpenSource.py
+Polynomial Regression Degree 2
+```
+
+Polynomial regression is optional and is disabled by default because it creates many additional interaction features.
+
+---
+
+## 5.7 Model Combination Comparison
+
+The pipeline compares different combinations of:
+
+- feature sets
+- missing value strategies
+- scaling methods
+- regression degree
+
+### Compared Feature Sets
+
+| Feature Set | Description |
+|---|---|
+| `all_features` | Uses all available features |
+| `without_current_change_percent` | Removes `Fuel_Price_Change_Percent` |
+| `without_Brent_for_multicollinearity` | Removes `Brent_Crude_USD_per_barrel` |
+| `without_WTI_for_multicollinearity` | Removes `WTI_Crude_USD_per_barrel` |
+
+The best model is selected mainly by the lowest `CV_RMSE` and then by the lowest `Test_RMSE`.
+
+---
+
+## 5.8 Evaluation Metrics
+
+The regression model is evaluated using:
+
+| Metric | Meaning | Better Direction |
+|---|---|---|
+| MAE | Mean Absolute Error | Lower is better |
+| MSE | Mean Squared Error | Lower is better |
+| RMSE | Root Mean Squared Error | Lower is better |
+| R² | Coefficient of Determination | Closer to 1 is better |
+
+MAE was added to make the average prediction error easier to interpret, while MSE, RMSE, and R² were extended from the baseline regression evaluation structure.
+
+---
+
+## 5.9 Output Files
+
+When the script is executed, the following files are saved in:
+
+```text
+regression_outputs/
+```
+
+| Output File | Description |
+|---|---|
+| `all_regression_model_results.csv` | Evaluation results of all model combinations |
+| `top5_regression_model_results.csv` | Top 5 model combinations |
+| `regression_predictions.csv` | Actual values, predicted values, and residuals |
+| `top30_regression_coefficients.csv` | Top 30 regression coefficients by absolute value |
+| `actual_vs_predicted.png` | Actual vs predicted scatter plot |
+
+---
+
+## 5.10 How to Run
+
+Place the code file and dataset file in the same directory:
+
+```text
+Kwon_Keonho_Regression_OpenSource_with_Team_References.py
 Iran_War_Global_Fuel_Crisis_Dirty_Dataset.csv
 ```
 
-Then run:
+Run the script:
 
 ```bash
-python Kwon_Keonho_Regression_OpenSource.py
+python Kwon_Keonho_Regression_OpenSource_with_Team_References.py
 ```
 
-## Required Libraries
+After execution, result files will be generated in:
+
+```text
+regression_outputs/
+```
+
+---
+
+## 5.11 Required Libraries
 
 ```text
 pandas
@@ -145,14 +240,29 @@ matplotlib
 scikit-learn
 ```
 
-## Contribution Summary
+Main scikit-learn components used:
 
-This module contributes to the project by:
+```text
+ColumnTransformer
+SimpleImputer
+LinearRegression
+KFold
+cross_validate
+train_test_split
+Pipeline
+OneHotEncoder
+PolynomialFeatures
+RobustScaler
+StandardScaler
+mean_absolute_error
+mean_squared_error
+r2_score
+```
 
-1. Defining a regression target for next-day fuel price movement
-2. Building a reusable top-level regression pipeline
-3. Comparing multiple preprocessing and model combinations
-4. Evaluating model performance with MAE, MSE, RMSE, and R²
-5. Saving outputs that can be used in the final report, presentation, and GitHub repository
+---
 
-In summary, this part connects the project’s preprocessing results with the final regression modeling task and provides an open-source style structure suitable for submission.
+## 5.12 Summary
+
+This module is the final regression and open-source software contribution part of the project. It uses internal team code references for preprocessing and baseline modeling, then extends them into a unified regression pipeline.
+
+The key contribution is the creation of a reusable top-level function that predicts `Next_Day_Fuel_Change_Amount`, compares multiple model combinations, evaluates performance with MAE, MSE, RMSE, and R², and saves result files for the final report and presentation.
