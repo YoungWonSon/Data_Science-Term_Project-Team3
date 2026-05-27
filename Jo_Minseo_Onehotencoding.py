@@ -7,9 +7,6 @@ df = pd.read_csv("Iran_War_Global_Fuel_Crisis_Dirty_Dataset.csv", encoding="utf-
 # 각 feature의 데이터타입 확인
 print(df.dtypes)
 
-# 'Country' feature를 category 타입으로 변환해야하는 경우
-#df['Country'] = df['Country'].astype('category')
-
 #Country feature는 순위가 매겨지지 않으므로 label encoding이 아닌 one-hot encoding을 사용해야 함
 
 #https://scikit-learn.org/stable/modules/generated/sklearn.preprocessing.OneHotEncoder.html
