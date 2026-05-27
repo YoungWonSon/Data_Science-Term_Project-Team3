@@ -14,6 +14,23 @@ To analyze the impact of global external shocks on domestic oil prices, building
 Oil price related variables showed strong positive correlations, while stock market index changes showed negative correlations with crisis-related variables.
 Some columns contained missing values and error-type values (999.0, -99.0), and large fluctuations were preserved because they may represent real crisis situations.
 
+# 3. Preprocessing & Feature Engineering Lead (Cho Minseo)
+1. Replace missing value with ffill
+-The dataset we use has data values over continuous time, so replace using the ffill function.
+2. Data type preprocessing
+-To apply the modeling, classify text data and numerical data, and convert the values of the 'Date' column into integers.
+3. Remove error
+-Eliminating Error Outliers (-99.0, 999.0).
+4. Find outlier using IQR method
+-Using IQR method to deal with outlier, but for our data analysis goal, we believe that outlier should be maintained without getting rid of it.
+5. Apply robust scaling considering outlier
+-Reduce the influence of extreme values with robust scaling instead of handling outliers.
+6. Create a KDE graph before and after scaling
+-Visualize before and after scaling at a glance.
+7. Apply one-hot-encoding
+-Apply encoding to use the object type 'Country' feautre in the algorithm, and use the one hot encoding method because the country is not ranked or ordered.
+---
+
 # 5. Regression Modeling & Open Source SW Lead
 
 **Author:** Kwon Keonho  
