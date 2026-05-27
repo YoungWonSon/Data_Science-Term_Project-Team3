@@ -11,7 +11,11 @@ cols = ['WTI_Crude_USD_per_barrel', 'Brent_Crude_USD_per_barrel',
         'Fuel_Price_Local', 'Shipping_Cost_Index', 'USD_Exchange_Rate']
 
 # Date 컬럼을 datetime 형식으로 변환, object 타입이어도 ffill 적용되긴 하지만 시계열 데이터임을 확실히 하기 위해 변환
-df['Date'] = pd.to_datetime(df['Date'])
+#df['Date'] = pd.to_datetime(df['Date'])
+# [수정] datetime 형식이 아닌 정수형으로 변환하여 날짜를 표현 (예: 2023-01-01 -> 20230101),머신러닝 모델이 날짜를 숫자로 인식하도록 하기 위해, '-'를 제거한 후 정수형으로 변환
+df['Date'] = df['Date'].str.replace('-', '').astype(int)
+
+
 
 # 국가별, 날짜별 정렬
 df = df.sort_values(['Country', 'Date'])
