@@ -31,6 +31,70 @@ Some columns contained missing values and error-type values (999.0, -99.0), and 
 - Apply encoding to use the object type 'Country' feautre in the algorithm, and use the one hot encoding method because the country is not ranked or ordered.
 ---
 
+# 4. Classification, Clustering, Regression Modeling & Evaluation Lead
+
+k-Means Clustering vs Hierarchical Agglomerative Clustering
+1. 숫자형 변수는 표준화, Country는 one-hot encoding = 이런 구조는 K-Means가 centroid를 기준으로 패턴을 나누기에 적합한 형태
+2. K-Means: 클러스터 중심점인 centroid를 기준으로 데이터를 반복적으로 분류.
+            => 데이터 개수가 많아도 비교적 빠르게 실행
+   Hierarchical Agglomerative Clustering: 처음에 각 데이터를 하나의 클러스터로 보고, 가장 가까운 클러스터끼리 계속 병합
+                                       => 전체 거리 관계를 많이 계산해야 하기 때문에 데이터가 많아질수록 느림
+3. K-Means: 각 클러스터의 중심값 확인 가능 => K-Means는 클러스터별 특징을 설명하기 쉬움
+   Hierarchical Clustering: dendrogram을 통해 데이터가 어떻게 병합되는지는 볼 수 있지만, 
+                            최종 클러스터의 특징을 직관적으로 해석하려면 추가 분석이 필요
+                            
+inertia = K-Means가 만든 클러스터가 얼마나 잘 모여 있는지를 나타내는 값
+          각 데이터가 자기 클러스터의 중심점에서 얼마나 떨어져 있는지의 총합
+inertia가 작다 = 데이터들이 중심점 주변에 잘 모여 있다
+inertia가 크다 = 데이터들이 중심점에서 많이 흩어져 있다
+
+Elbow Method: 여러 개의 k 값을 실험해 보고, 각 k의 inertia를 그래프로 그린 뒤 적절한 클러스터 개수를 고르는 방법
+              클러스터 수를 늘렸을 때 성능 향상이 갑자기 줄어드는 지점을 찾는 방법
+
+Silhouette Score: 클러스터링이 얼마나 잘 되었는지를 평가하는 점수
+                  1) Cluster 안에서 잘 뭉쳐 있는가?
+                  2) 다른 Cluster와 잘 구분되는가?
+                  => 내 클러스터 안에서는 가깝고, 다른 클러스터와는 멀어야 좋다.
+                1에 가까움 = 클러스터가 매우 잘 나뉨
+
+Decision Tree vs KNN
+1. 경제 지표들이 여러 개 있는 경우에는 Decision Tree가, 어떤 조건 때문에 유가 상승이 크다고 판단했는지 설명하기 좋음
+2. 수치형 경제 변수 많음 = (KNN에서의 문제)차원이 많아질수록 거리 계산이 덜 명확해짐, 때문에 Descision Tree 선택
+3. 어떤 변수가 유가 상승 분류에 중요한지 feature importance로 설명할 수 있다.
+
+1. 여러 독립변수 X가 존재 => 따라서 하나의 변수만 사용하는 simple linear regression보다, 
+                            여러 변수를 동시에 사용하는 multiple linear regression이 더 적합
+2. Polynomial Regression은 비선형 관계를 잡을 수 있다는 장점이 있음, 
+   but 변수가 많은 상태에서 polynomial regression을 적용하면 문제가 생길 수 있음. 
+   특히 2차 polynomial 적용 = 기존 변수 + 변수의 제곱 + 변수끼리의 곱 
+        => 2차 polynomial을 적용하면 feature 수가 급격히 늘어남, 연산량 상승
+        
+Mean Squared Error, MSE = 평균((실제값 - 예측값)²), 모델이 얼마나 틀렸는지
+Root Mean Squared Error, RMSE = RMSE는 MSE에 루트를 씌운 값
+R-squared, R² Score = 1 - (모델의 오차 / 평균 모델의 오차), 모델이 target의 변화를 얼마나 잘 설명하는지
+                      전체 데이터 변동 중에서 모델이 설명할 수 있는 비율
+                      R² = 0.85이면, 모델이 Fuel_Price_Local의 변동을 약 85% 설명한다.
+| R² 값      | 의미                     |
+| 1에 가까움 | 모델이 데이터를 매우 잘 설명함      |
+| 0에 가까움 | 모델이 평균값으로 예측하는 것과 비슷함  |
+| 음수       | 모델이 평균값으로 예측하는 것보다도 못함 |
+
+Regression Coefficients = 각 독립변수가 target에 얼마나 영향을 주는지를 나타내는 값
+                         if WTI_Crude_USD_per_barrel의 Regression Coefficients가 0.45이면 
+                            => WTI 원유 가격이 증가할수록 Fuel_Price_Local도 증가하는 경향이 있다.
+                         if News_Sentiment_Score = -0.20 => 뉴스 감성 점수가 높아질수록 Fuel_Price_Local은 감소하는 경향이 있다.
+| Coefficient 부호 | 의미                          |
+| 양수 `+`         | 해당 변수가 증가하면 target도 증가하는 경향 |
+| 음수 `-`         | 해당 변수가 증가하면 target은 감소하는 경향 |
+| 0에 가까움       | target에 미치는 영향이 약함          |
+
+
+| 지표                     | 의미                             | 좋은 방향       |
+| MSE                     | 실제값과 예측값 차이의 제곱 평균   | 작을수록 좋음     |
+| RMSE                    | MSE의 제곱근, 평균적인 예측 오차   | 작을수록 좋음     |
+| R² Score                | 모델이 target 변동을 설명하는 비율 | 1에 가까울수록 좋음 |
+| Regression Coefficients | 각 독립변수가 target에 미치는 영향 | 부호와 크기로 해석  |
+
 # 5. Regression Modeling & Open Source SW Lead
 
 **Author:** Kwon Keonho  

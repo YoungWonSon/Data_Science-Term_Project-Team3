@@ -4,54 +4,42 @@ import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 from sklearn.decomposition import PCA
-from Kim_Dana_Standarization_Data import df, df_standardized
-'''
-k-Means Clustering vs Hierarchical Agglomerative Clustering
+import Kim_Dana_Standarization_Data
 
-1. 숫자형 변수는 표준화, Country는 one-hot encoding = 이런 구조는 K-Means가 centroid를 기준으로 패턴을 나누기에 적합한 형태
-2. K-Means: 클러스터 중심점인 centroid를 기준으로 데이터를 반복적으로 분류.
-            => 데이터 개수가 많아도 비교적 빠르게 실행
-   Hierarchical Agglomerative Clustering: 처음에 각 데이터를 하나의 클러스터로 보고, 가장 가까운 클러스터끼리 계속 병합
-                                       => 전체 거리 관계를 많이 계산해야 하기 때문에 데이터가 많아질수록 느림
-3. K-Means: 각 클러스터의 중심값 확인 가능 => K-Means는 클러스터별 특징을 설명하기 쉬움
-   Hierarchical Clustering: dendrogram을 통해 데이터가 어떻게 병합되는지는 볼 수 있지만, 
-                            최종 클러스터의 특징을 직관적으로 해석하려면 추가 분석이 필요
-                            
-inertia = K-Means가 만든 클러스터가 얼마나 잘 모여 있는지를 나타내는 값
-          각 데이터가 자기 클러스터의 중심점에서 얼마나 떨어져 있는지의 총합
-inertia가 작다 = 데이터들이 중심점 주변에 잘 모여 있다
-inertia가 크다 = 데이터들이 중심점에서 많이 흩어져 있다
-
-Elbow Method: 여러 개의 k 값을 실험해 보고, 각 k의 inertia를 그래프로 그린 뒤 적절한 클러스터 개수를 고르는 방법
-              클러스터 수를 늘렸을 때 성능 향상이 갑자기 줄어드는 지점을 찾는 방법
-
-Silhouette Score: 클러스터링이 얼마나 잘 되었는지를 평가하는 점수
-                  1) Cluster 안에서 잘 뭉쳐 있는가?
-                  2) 다른 Cluster와 잘 구분되는가?
-                  => 내 클러스터 안에서는 가깝고, 다른 클러스터와는 멀어야 좋다.
-                1에 가까움 = 클러스터가 매우 잘 나뉨
-'''
+df_standardized = Kim_Dana_Standarization_Data.df_standardized.copy()
+raw_df = Kim_Dana_Standarization_Data.df.copy()
 
 # 1. Clustering용 데이터 준비
 # Date는 문자열 데이터이므로 K-Means에 사용할 수 없음
-X = df_standardized.drop(columns=["Date"], errors="ignore")
+#X = df_standardized.drop(columns=["Date"], errors="ignore")
+#X = df_standardized.drop(columns=["Date", "Date_Ordinal"], errors="ignore")
+
+clustering_cols_simple = [
+    'Brent_Crude_USD_per_barrel',
+    'Fuel_Price_Local',
+    'Fuel_Price_Change_Percent',
+    'Crisis_Intensity_Index',
+    'USD_Exchange_Rate',
+    'Inflation_Rate_Percent'
+]
+X = df_standardized[clustering_cols_simple]
 
 # 혹시 object 타입 컬럼이 남아 있을 경우 제거
 X = X.select_dtypes(include=["int64", "float64", "int32", "float32", "uint8", "bool"])
 
 # K-Means는 결측치를 처리할 수 없으므로 결측치가 있는 행 제거 -> 제거된 행과 원본 df의 index를 맞춤
 X_clean = X.dropna()
-df_result = df.loc[X_clean.index].copy()
+df_result = df_standardized.loc[X_clean.index].copy()
 
+print(df_result.head())
 print("Clustering Data Shape:", X_clean.shape)
-print("Columns used for clustering:")
-print(list(X_clean.columns))
 
 # 2. 최적 k 찾기
 k_results = []
-max_k = min(10, len(X_clean) - 1)
+max_k = len(X_clean.columns) * 2
+print("max_k: ", max_k)
 
-for k in range(2, max_k + 1):
+for k in range(2, max_k):
     kmeans = KMeans(
         n_clusters=k,
         random_state=42,
@@ -69,8 +57,12 @@ for k in range(2, max_k + 1):
     })
 
 k_results_df = pd.DataFrame(k_results)
-print("\nK-Means Evaluation Results:")
-print(k_results_df)
+print("\nK-Means Evaluation Results Sorted by Silhouette Score:")
+k_results_sorted = k_results_df.sort_values(
+    by="silhouette_score",
+    ascending=False
+)
+print(k_results_sorted)
 
 # Silhouette Score가 가장 높은 k 선택
 best_k = int(k_results_df.loc[k_results_df["silhouette_score"].idxmax(), "n_clusters"])
@@ -87,26 +79,7 @@ df_result["Cluster"] = best_kmeans.fit_predict(X_clean)
 print("\nCluster Counts:")
 print(df_result["Cluster"].value_counts().sort_index())
 
-# 4. Cluster Center 확인
-# 상대적으로 원유 가격이 낮은 시기 또는 안정적인 시장 상황을 나타내는 그룹 vs
-#                                 원유 가격이 크게 상승한 고유가 상황 또는 위기성이 강한 시장 상황을 나타내는 그룹
-cluster_centers = pd.DataFrame(
-    best_kmeans.cluster_centers_,
-    columns=X_clean.columns
-)
-print("\nCluster Centers:")
-print(cluster_centers.round(4))
-
-# 5. 원본 데이터 기준 Cluster별 평균 확인
-numeric_original_cols = df.drop(columns=["Date", "Country"], errors="ignore").select_dtypes(
-    include=["int64", "float64"]
-).columns
-cluster_summary = df_result.groupby("Cluster")[numeric_original_cols].mean()
-
-print("\nCluster Summary Based on Original Numeric Values:")
-print(cluster_summary.round(4))
-
-# 6. Elbow Method 그래프
+# 4. Elbow Method 그래프
 plt.figure(figsize=(8, 5))
 plt.plot(k_results_df["n_clusters"], k_results_df["inertia"], marker="o")
 plt.title("Elbow Method for K-Means")
@@ -115,7 +88,7 @@ plt.ylabel("Inertia")
 plt.grid(True)
 plt.show()
 
-# 7. Silhouette Score 그래프
+# 5. Silhouette Score 그래프
 plt.figure(figsize=(8, 5))
 plt.plot(k_results_df["n_clusters"], k_results_df["silhouette_score"], marker="o")
 plt.title("Silhouette Score by Number of Clusters")
@@ -124,7 +97,55 @@ plt.ylabel("Silhouette Score")
 plt.grid(True)
 plt.show()
 
-# 8. PCA를 이용한 2D 시각화
+# 7. Cluster Center 확인
+cluster_centers = pd.DataFrame(
+    best_kmeans.cluster_centers_,
+    columns=X_clean.columns
+)
+print("\nCluster Centers:")
+print(cluster_centers.round(4))
+
+# 원본 데이터 기준으로 클러스터 결과 붙이기
+raw_clustered_df = raw_df.loc[X_clean.index].copy()
+raw_clustered_df["Cluster"] = df_result["Cluster"].values
+raw_clustered_df["Date"] = raw_clustered_df["Date_Ordinal"].apply(
+    lambda x: pd.Timestamp.fromordinal(int(x)))
+
+print(raw_clustered_df[["Date", "Country", "Cluster"]].head())
+
+# Country를 y축에 표시하기 위해 숫자로 변환
+country_order = sorted(raw_clustered_df["Country"].dropna().unique())
+country_to_num = {country: i for i, country in enumerate(country_order)}
+raw_clustered_df["Country_Num"] = raw_clustered_df["Country"].map(country_to_num)
+
+plt.figure(figsize=(14, 7))
+
+scatter = plt.scatter(
+    raw_clustered_df["Date"],
+    raw_clustered_df["Country_Num"],
+    c=raw_clustered_df["Cluster"],
+    alpha=0.8
+)
+
+plt.yticks(
+    ticks=list(country_to_num.values()),
+    labels=list(country_to_num.keys())
+)
+
+plt.title("K-Means Clustering Result by Date and Country")
+plt.xlabel("Date")
+plt.ylabel("Country")
+
+cbar = plt.colorbar(scatter)
+cbar.set_label("Cluster")
+
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+########################################################## 이 밑으로는 추가적인 결과를 원하시면, 주석을 풀고 체크하시면 됩니다.
+'''
+# 6. PCA를 이용한 2D 시각화
 pca = PCA(n_components=2)
 X_pca = pca.fit_transform(X_clean)
 
@@ -141,3 +162,44 @@ plt.xlabel("PCA Component 1")
 plt.ylabel("PCA Component 2")
 plt.grid(True)
 plt.show()
+'''
+######################################################
+'''
+1. Cluster 0: Brent 높음, Fuel Price 높음, Crisis 높음, USD 높음, Inflation 약간 낮음
+      고유가 + 높은 위기 강도 + 환율 상승형 클러스터 = 이란 전쟁/위기 상황으로 인해 유가가 상승한 전형적인 위기성 고유가 시장 해석
+
+2. Cluster 1: Brent 낮음, Fuel Price 낮음, Fuel Change 낮음, Crisis 낮음, USD 낮음, Inflation 낮음
+                안정적인 저유가 시장 클러스터
+3. Cluster 2: Brent 낮음, Fuel Price 매우 높음, USD 매우 높음, Inflation 높음, Crisis 낮음
+                국제 유가는 낮지만 현지 연료 가격이 높은 환율·인플레이션 영향형 클러스터
+4. Cluster 3: Fuel_Price_Change_Percent = 19.3138, 다른 변수들은 대부분 평균 이하 또는 평균 근처
+                연료 가격 변화율 이상치 클러스터
+5. Cluster 4: Brent 높음, Crisis 높음, Fuel Price 낮음, USD 낮음, Inflation 낮음
+                국제 유가는 상승했지만, 환율이나 인플레이션 압력이 낮아서 현지 연료 가격까지 크게 상승하지 않은 그룹
+6. Cluster 5: Brent 낮음, Crisis 낮음, Fuel Price 약간 높음, USD 높음, Inflation 낮음
+                국제 유가와 위기 강도는 낮지만 환율 때문에 현지 연료 가격이 오른 클러스터
+7. Cluster 6: Brent 높음, Crisis 높음, Inflation 매우 높음, Fuel Price 거의 평균
+                고유가 + 높은 위기 강도 + 매우 높은 인플레이션 클러스터, 유가 위기와 인플레이션 압력이 동시에 강한 시장 상황
+8. Cluster 7: Brent 매우 높음, Fuel Price 매우 높음, Crisis 높음, USD 매우 높음, Inflation 높음
+                가장 심각한 고유가·위기·환율·인플레이션 복합 충격 클러스터
+9. Cluster 8: Brent 낮음, Fuel Price 낮음, Crisis 낮음, Inflation 매우 높음
+                유가 위기는 약하지만 인플레이션이 높은 클러스터, 일반적인 물가 상승 압력이 강한 그룹으로 해석
+
+'''
+'''
+cluster_centers = pd.DataFrame(
+    best_kmeans.cluster_centers_,
+    columns=X_clean.columns
+)
+print("\nCluster Centers:")
+print(cluster_centers.round(4))
+
+# 8. 원본 데이터 기준 Cluster별 평균 확인
+numeric_original_cols = df_standardized.drop(columns=["Date", "Country"], errors="ignore").select_dtypes(
+    include=["int64", "float64"]
+).columns
+cluster_summary = df_result.groupby("Cluster")[numeric_original_cols].mean()
+
+print("\nCluster Summary Based on Original Numeric Values:")
+print(cluster_summary.round(4))
+'''

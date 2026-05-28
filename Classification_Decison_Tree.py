@@ -8,16 +8,10 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.tree import plot_tree
 from sklearn.impute import SimpleImputer
 from sklearn.metrics import accuracy_score, classification_report
+from sklearn.model_selection import cross_val_score, cross_val_predict
 from sklearn.model_selection import GridSearchCV
 
-'''
-유가 상승 정도를 No_Increase / Slight_Increase / Large_Increase 로 분류하는 것
-
-Decision Tree vs KNN
-1. 경제 지표들이 여러 개 있는 경우에는 Decision Tree가, 어떤 조건 때문에 유가 상승이 크다고 판단했는지 설명하기 좋음
-2. 수치형 경제 변수 많음 = (KNN에서의 문제)차원이 많아질수록 거리 계산이 덜 명확해짐, 때문에 Descision Tree 선택
-3. 어떤 변수가 유가 상승 분류에 중요한지 feature importance로 설명할 수 있다.
-'''
+#유가 상승 정도를 No_Increase / Slight_Increase / Large_Increase 로 분류하는 것
 
 # 표준화된 데이터와 원본 데이터 가져오기
 df_standardized = Kim_Dana_Standarization_Data.df_standardized.copy()
@@ -35,11 +29,14 @@ raw_df["Fuel_Rise_Level"] = pd.cut(
     include_lowest=True
 )
 
-print(raw_df.head())
-
 # 3. X, y 설정
 # Fuel_Price_Change_Percent는 target을 만드는 데 사용했으므로 제거
 X = df_standardized.drop(columns=["Date", "Fuel_Price_Change_Percent"])
+date_series = pd.to_datetime(df_standardized["Date"], errors="coerce")
+
+X["Date_Ordinal"] = date_series.map(
+    lambda x: x.toordinal() if pd.notna(x) else np.nan
+)
 y = raw_df["Fuel_Rise_Level"]
 
 # 4. y가 NaN인 행 제거
@@ -47,13 +44,14 @@ valid_index = y.notna()
 X = X.loc[valid_index]
 y = y.loc[valid_index]
 
+
+###################################################메인 코어
 # 5. Train/test split
 X_train, X_test, y_train, y_test = train_test_split(
     X,
     y,
     test_size=0.2,
-    random_state=42,
-    stratify=y
+    shuffle=False
 )
 
 # 6. 결측치 처리, imputer는 train data에만 fit해야 함
@@ -87,9 +85,41 @@ y_pred = dt_model.predict(X_test_imputed)
 print("Accuracy:", accuracy_score(y_test, y_pred))
 print(classification_report(y_test, y_pred, zero_division=0))
 
+# K-Fold Cross Validation 조건 충족
+cv_scores = cross_val_score(
+    dt_model,
+    X_train_imputed,
+    y_train,
+    cv=5
+)
+
+# print each cv score (accuracy) and average them
+print(cv_scores)
+print("cv_scores mean:{}".format(np.mean(cv_scores)))
+
+feature_names = X.columns
+
+# Tree Structure를 그림으로 출력
+plt.figure(figsize=(40, 20), dpi=150)
+
+plot_tree(
+    dt_model,
+    feature_names=list(feature_names),
+    class_names=[str(cls) for cls in dt_model.classes_],
+    filled=True,
+    rounded=True,
+    fontsize=6,
+    max_depth=4,
+    impurity=False
+)
+plt.title("Decision Tree Structure")
+plt.show()
+
+'''
+# 이 아래부터는 텀 프로젝트 조건을 제외한, extra 결과 시각화 입니다.
+
 # 요소 중요도 확인 및 시각화
 # 10. Feature Importance 확인
-feature_names = X.columns
 importance_df = pd.DataFrame({
     "Feature": feature_names,
     "Importance": dt_model.feature_importances_
@@ -109,23 +139,7 @@ plt.xlabel("Importance")
 plt.ylabel("Feature")
 plt.show()
 
-# 12. Tree Structure를 그림으로 출력
-plt.figure(figsize=(24, 12))
-
-plot_tree(
-    dt_model,
-    feature_names=list(feature_names),
-    class_names=[str(cls) for cls in dt_model.classes_],
-    filled=True,
-    rounded=True,
-    fontsize=8,
-    max_depth=3
-)
-plt.title("Decision Tree Structure")
-plt.show()
-
-
-# 13. Feature별 threshold 묶어서 출력
+# 12. Feature별 threshold 묶어서 출력
 tree = dt_model.tree_
 feature_thresholds = {}
 
@@ -146,3 +160,4 @@ print("\nThresholds by Feature:")
 for feature, thresholds in feature_thresholds.items():
     threshold_list = [round(t, 4) for t in thresholds]
     print(f"{feature}: {threshold_list}")
+'''

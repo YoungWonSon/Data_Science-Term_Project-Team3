@@ -2,6 +2,10 @@ import pandas as pd
 from sklearn.preprocessing import StandardScaler
 
 df = pd.read_csv("Iran_War_Global_Fuel_Crisis_Dirty_Dataset.csv", encoding="utf-8")
+date_series = pd.to_datetime(df["Date"], errors="coerce")
+df["Date_Ordinal"] = date_series.map(
+    lambda x: x.toordinal() if pd.notna(x) else np.nan
+)
 country_encoded = pd.get_dummies(df["Country"], prefix="Country", dtype=int)
 numeric_cols = df.drop(columns=["Date", "Country"]).select_dtypes(
     include=["int64", "float64"]
@@ -34,6 +38,8 @@ if __name__ == "__main__":
 
     print("\nStandardized Data Shape:", df_standardized.shape)
     print(df_standardized.head())
+    print(list(df_standardized.columns))
+
 
 '''
 #데이터 전체적 분포 확인
