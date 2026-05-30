@@ -49,7 +49,7 @@ from sklearn.metrics import (
     recall_score,
     silhouette_score,
 )
-from sklearn.model_selection import GridSearchCV, KFold, StratifiedKFold, cross_validate
+from sklearn.model_selection import GridSearchCV, KFold, StratifiedKFold, cross_validate, train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, RobustScaler
 from sklearn.tree import DecisionTreeClassifier, plot_tree
@@ -348,23 +348,37 @@ def build_preprocessor(
     )
 
 
-def time_based_train_test_split(
+def random_train_test_split(
     X: pd.DataFrame,
     y: pd.Series,
     test_size: float = 0.2,
+    random_state: int = 42,
+    stratify: pd.Series | None = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
     """
-    시계열 성격을 고려해 날짜 순서 기준으로 train/test를 나눈다.
+    팀원 피드백을 반영해 shuffle=True 방식으로 train/test를 나눈다.
 
-    기존 4번 classification은 stratify random split을 사용했지만,
-    최종 next-day 예측에서는 미래 데이터가 train에 섞이지 않는 편이 더 안전하다.
+    [수정 이유]
+    이전 통합본은 보수적인 평가를 위해 Date 기준 시간순 split을 사용했다.
+    하지만 팀의 기존 4번 모델링 코드와 비교할 때 test set이 특정 날짜/국가 구간에 치우쳐
+    성능이 비정상적으로 downgrade되어 보일 수 있었다.
+
+    [최종 선택]
+    수업 프로젝트의 모델 비교와 안정적인 평가를 위해 shuffle=True 랜덤 분할을 사용한다.
+    classification에서는 stratify=y를 함께 사용해 train/test class 비율을 유지한다.
+
+    [중요]
+    train/test 모두 전처리된다.
+    다만 Pipeline 구조상 전처리 기준은 train에만 fit되고 test에는 transform만 적용된다.
     """
-    ordered_index = X.sort_values(["Date", "Country"]).index
-    split_point = int(len(ordered_index) * (1 - test_size))
-    train_index = ordered_index[:split_point]
-    test_index = ordered_index[split_point:]
-
-    return X.loc[train_index], X.loc[test_index], y.loc[train_index], y.loc[test_index]
+    return train_test_split(
+        X,
+        y,
+        test_size=test_size,
+        shuffle=True,
+        random_state=random_state,
+        stratify=stratify,
+    )
 
 
 def run_classification(
@@ -381,7 +395,13 @@ def run_classification(
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    X_train, X_test, y_train, y_test = time_based_train_test_split(X, y, test_size=test_size)
+    X_train, X_test, y_train, y_test = random_train_test_split(
+        X,
+        y,
+        test_size=test_size,
+        random_state=random_state,
+        stratify=y,
+    )
 
     # 날짜 컬럼은 Date_Ordinal로 이미 반영했으므로 원본 Date는 제거한다.
     X_train = X_train.drop(columns=["Date"], errors="ignore")
@@ -537,7 +557,13 @@ def run_regression(
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    X_train, X_test, y_train, y_test = time_based_train_test_split(X, y, test_size=test_size)
+    X_train, X_test, y_train, y_test = random_train_test_split(
+        X,
+        y,
+        test_size=test_size,
+        random_state=random_state,
+        stratify=None,
+    )
     X_train = X_train.drop(columns=["Date"], errors="ignore")
     X_test = X_test.drop(columns=["Date"], errors="ignore")
     categorical_cols = [c for c in categorical_cols if c != "Date"]
