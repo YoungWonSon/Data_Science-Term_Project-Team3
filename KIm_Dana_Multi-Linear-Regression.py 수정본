@@ -1,0 +1,471 @@
+"""
+KIm_Dana_Multi-Linear-Regression.py 수정본
+
+이 파일은 4번 역할의 기존 회귀 코드 구조를 최대한 유지하면서,
+최종 제안서 목표와 모델 평가 신뢰성을 위해 문제가 되는 부분을 수정한 버전입니다.
+
+기존 파일의 핵심 흐름:
+1. 표준화된 데이터 불러오기
+2. target 설정
+3. train/test split
+4. Multiple Linear Regression 학습
+5. MSE, RMSE, R2 평가
+6. 회귀 계수와 실제값/예측값 비교
+
+수정 핵심:
+1. target을 현재 가격 수준(Fuel_Price_Local)이 아니라 다음날 가격 변동폭으로 변경
+2. train/test split 전에 전체 데이터에 StandardScaler를 fit하던 data leakage 문제 제거
+3. 999.0, -99.0 오류성 dirty value 처리 추가
+4. 결측치 처리 추가
+5. 결과 CSV와 그래프를 파일로 저장하도록 수정
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+try:
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import numpy as np
+    import pandas as pd
+    from sklearn.compose import ColumnTransformer
+    from sklearn.impute import SimpleImputer
+    from sklearn.linear_model import LinearRegression
+    from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+    from sklearn.model_selection import train_test_split
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import OneHotEncoder, StandardScaler
+except ModuleNotFoundError as exc:
+    raise SystemExit(
+        "필요한 패키지가 설치되어 있지 않습니다. "
+        "pandas, numpy, matplotlib, scikit-learn 설치 후 다시 실행하세요.\n"
+        f"누락된 패키지 정보: {exc}"
+    )
+
+
+# ---------------------------------------------------------------------
+# 0. 경로 설정
+# ---------------------------------------------------------------------
+# [문제]
+# 기존 코드에서는 Kim_Dana_Standarization_Data.py를 import해서 df_standardized를 가져왔습니다.
+# 그런데 그 파일은 전체 데이터에 먼저 StandardScaler를 fit하므로 data leakage 위험이 있습니다.
+#
+# [수정]
+# 이 파일 안에서 원본 CSV를 직접 읽고, train/test split 이후 Pipeline 안에서 전처리합니다.
+# 이렇게 하면 scaler와 imputer가 train data에만 fit되고 test data에는 transform만 적용됩니다.
+DEFAULT_CSV_PATH = Path(
+    "/Users/winter/Documents/가천대학교/2026년 3학년 1학기/"
+    "Data Science/Term Project/데이터 셋/Iran_War_Global_Fuel_Crisis_Dirty_Dataset.csv"
+)
+
+OUTPUT_DIR = Path("fixed_regression_outputs")
+
+
+def make_one_hot_encoder() -> OneHotEncoder:
+    """
+    Country 같은 범주형 변수를 one-hot encoding하기 위한 encoder입니다.
+
+    [문제]
+    scikit-learn 버전에 따라 OneHotEncoder의 인자가 sparse_output 또는 sparse로 다릅니다.
+
+    [수정]
+    최신 버전에서는 sparse_output=False를 사용하고,
+    구버전에서는 sparse=False로 fallback하도록 처리했습니다.
+    """
+    try:
+        return OneHotEncoder(handle_unknown="ignore", sparse_output=False)
+    except TypeError:
+        return OneHotEncoder(handle_unknown="ignore", sparse=False)
+
+
+def load_dataset(csv_path: Path = DEFAULT_CSV_PATH) -> pd.DataFrame:
+    """
+    원본 dirty dataset을 불러옵니다.
+
+    기존 파일의 df_standardized import 대신 read_csv를 사용합니다.
+    이렇게 해야 결측치, 이상치, target 생성 과정을 한 파일 안에서 명확히 설명할 수 있습니다.
+    """
+    if not csv_path.exists():
+        raise FileNotFoundError(f"CSV 파일을 찾을 수 없습니다: {csv_path}")
+
+    df = pd.read_csv(csv_path, encoding="utf-8")
+    print("Original Data Shape:", df.shape)
+    print(df.head())
+    return df
+
+
+def clean_dirty_values(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    오류성 dirty value를 처리합니다.
+
+    [문제]
+    원본 데이터에는 Fuel_Price_Change_Percent = 999.0,
+    News_Sentiment_Score = -99.0 같은 현실적으로 보기 어려운 입력 오류성 값이 있습니다.
+    이 값들을 그대로 회귀 모델에 넣으면 회귀 계수와 예측 결과가 왜곡됩니다.
+
+    [수정]
+    명백한 오류성 값은 NaN으로 바꾸고, 이후 결측치 처리 단계에서 보완합니다.
+    """
+    df = df.copy()
+
+    if "Fuel_Price_Change_Percent" in df.columns:
+        df["Fuel_Price_Change_Percent"] = df["Fuel_Price_Change_Percent"].replace(999.0, np.nan)
+
+    if "News_Sentiment_Score" in df.columns:
+        df["News_Sentiment_Score"] = df["News_Sentiment_Score"].replace(-99.0, np.nan)
+
+    print("\n[Dirty Value Check After Replacement]")
+    print("999.0 count:")
+    print((df == 999.0).sum())
+    print("-99.0 count:")
+    print((df == -99.0).sum())
+
+    return df
+
+
+def fill_time_series_missing_values(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    국가별 시계열 결측치를 처리합니다.
+
+    [문제]
+    기존 회귀 파일은 model_df.dropna()로 결측치가 있는 행을 제거했습니다.
+    이 방식은 간단하지만, 데이터 손실이 커질 수 있고 제안서의 '정보 손실 방지' 방향과도 맞지 않습니다.
+
+    [수정]
+    Date를 datetime으로 바꾸고 Country, Date 기준으로 정렬한 뒤,
+    같은 국가 안에서 forward fill을 먼저 적용합니다.
+    그래도 남는 앞쪽 결측치는 국가별 중앙값, 전체 중앙값 순서로 채웁니다.
+
+    [수정 이유]
+    시계열 데이터에서는 같은 국가의 가까운 이전 값이 평균보다 자연스러운 대체값일 수 있습니다.
+    단, 미래값을 현재에 넣는 bfill은 예측 문제에서 data leakage 위험이 있으므로 기본 처리에서 제외했습니다.
+    """
+    df = df.copy()
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+    df = df.sort_values(["Country", "Date"]).reset_index(drop=True)
+
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    for col in numeric_cols:
+        df[col] = df.groupby("Country")[col].transform(lambda s: s.ffill())
+        df[col] = df.groupby("Country")[col].transform(lambda s: s.fillna(s.median()))
+        if df[col].isna().sum() > 0:
+            df[col] = df[col].fillna(df[col].median())
+
+    print("\n[Missing Values After Fill]")
+    print(df.isnull().sum())
+    return df
+
+
+def add_regression_target(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    회귀 target을 생성합니다.
+
+    [기존 문제]
+    원본 회귀 파일은 target_col = "Fuel_Price_Local"로 설정했습니다.
+    이 경우 모델은 '현재 현지 연료 가격 수준'을 예측합니다.
+    하지만 제안서의 회귀 목표는 지정학적 위기 상황에서 가격이 얼마나 변하는지,
+    즉 가격 변동폭을 예측하는 것에 더 가깝습니다.
+
+    [수정]
+    target을 Next_Day_Fuel_Change_Amount로 변경합니다.
+    계산식은 다음과 같습니다.
+
+        Next_Day_Fuel_Change_Amount
+        = 다음날 Fuel_Price_Local - 오늘 Fuel_Price_Local
+
+    [수정 이유]
+    classification이 다음날 상승 여부를 예측한다면,
+    regression은 다음날 얼마나 변하는지 예측하는 것이 논리적으로 연결됩니다.
+    """
+    df = df.copy()
+    df = df.sort_values(["Country", "Date"]).reset_index(drop=True)
+    df["Next_Day_Fuel_Price_Local"] = df.groupby("Country")["Fuel_Price_Local"].shift(-1)
+    df["Next_Day_Fuel_Change_Amount"] = df["Next_Day_Fuel_Price_Local"] - df["Fuel_Price_Local"]
+
+    # 각 국가의 마지막 날짜는 다음날 값이 없으므로 회귀 학습에서 제외합니다.
+    df = df.dropna(subset=["Next_Day_Fuel_Change_Amount"]).reset_index(drop=True)
+
+    print("\n[Target Created]")
+    print(df[["Country", "Date", "Fuel_Price_Local", "Next_Day_Fuel_Price_Local", "Next_Day_Fuel_Change_Amount"]].head())
+    return df
+
+
+def prepare_features_and_target(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series, list[str], list[str]]:
+    """
+    X, y를 분리합니다.
+
+    [기존 문제]
+    기존 회귀 파일은 이미 표준화된 df_standardized에서 X와 y를 분리했습니다.
+    하지만 표준화가 전체 데이터 기준으로 먼저 수행되어 data leakage가 발생할 수 있습니다.
+
+    [수정]
+    원본 feature를 유지한 채 X, y를 먼저 분리합니다.
+    그 다음 train/test split 이후 Pipeline에서 imputation, one-hot encoding, scaling을 수행합니다.
+    """
+    df = df.copy()
+
+    # Date는 문자열/날짜형 그대로는 LinearRegression에 넣기 어렵기 때문에 숫자형 ordinal로 변환합니다.
+    # 기존 Kim_Dana_Standarization_Data.py의 Date_Ordinal 아이디어를 유지한 수정입니다.
+    df["Date_Ordinal"] = df["Date"].map(lambda x: x.toordinal() if pd.notna(x) else np.nan)
+
+    target_col = "Next_Day_Fuel_Change_Amount"
+    y = df[target_col]
+
+    # 미래 정보를 담은 컬럼은 feature에서 제거합니다.
+    # Next_Day_Fuel_Price_Local을 feature로 넣으면 정답 정보를 미리 주는 것이므로 leakage입니다.
+    X = df.drop(columns=[target_col, "Next_Day_Fuel_Price_Local", "Date"], errors="ignore")
+
+    categorical_cols = X.select_dtypes(include=["object", "category"]).columns.tolist()
+    numeric_cols = X.select_dtypes(include=[np.number]).columns.tolist()
+
+    print("\n[Feature/Target Split]")
+    print("X shape:", X.shape)
+    print("y shape:", y.shape)
+    print("Categorical columns:", categorical_cols)
+    print("Numeric columns:", numeric_cols)
+
+    return X, y, numeric_cols, categorical_cols
+
+
+def build_regression_pipeline(numeric_cols: list[str], categorical_cols: list[str]) -> Pipeline:
+    """
+    전처리와 LinearRegression을 하나의 Pipeline으로 구성합니다.
+
+    [문제]
+    기존 코드는 표준화된 데이터를 import했기 때문에,
+    scaler가 전체 데이터에 fit된 상태였습니다.
+
+    [수정]
+    ColumnTransformer + Pipeline을 사용합니다.
+    train data에 fit할 때 imputer, scaler, one-hot encoder가 같이 fit되고,
+    test data에는 transform만 적용됩니다.
+    """
+    numeric_pipeline = Pipeline(
+        steps=[
+            ("imputer", SimpleImputer(strategy="median")),
+            ("scaler", StandardScaler()),
+        ]
+    )
+
+    categorical_pipeline = Pipeline(
+        steps=[
+            ("imputer", SimpleImputer(strategy="most_frequent")),
+            ("onehot", make_one_hot_encoder()),
+        ]
+    )
+
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ("num", numeric_pipeline, numeric_cols),
+            ("cat", categorical_pipeline, categorical_cols),
+        ],
+        remainder="drop",
+    )
+
+    model = Pipeline(
+        steps=[
+            ("preprocess", preprocessor),
+            ("regressor", LinearRegression()),
+        ]
+    )
+    return model
+
+
+def evaluate_model(y_test: pd.Series, y_pred: np.ndarray) -> dict[str, float]:
+    """
+    기존 회귀 파일의 MSE, RMSE, R2 평가를 유지하고 MAE를 추가합니다.
+
+    [수정 이유]
+    MAE는 평균적으로 실제 변동폭과 예측 변동폭이 얼마나 차이 나는지 직관적으로 보여줍니다.
+    """
+    mse = mean_squared_error(y_test, y_pred)
+    rmse = np.sqrt(mse)
+    mae = mean_absolute_error(y_test, y_pred)
+    r2 = r2_score(y_test, y_pred)
+
+    metrics = {
+        "MAE": mae,
+        "MSE": mse,
+        "RMSE": rmse,
+        "R2": r2,
+    }
+    return metrics
+
+
+def extract_coefficients(model: Pipeline) -> pd.DataFrame:
+    """
+    회귀 계수를 feature 이름과 함께 정리합니다.
+
+    기존 회귀 파일의 coefficients DataFrame 아이디어를 유지하되,
+    one-hot encoding 이후 생성된 feature 이름까지 반영합니다.
+    """
+    preprocessor = model.named_steps["preprocess"]
+    regressor = model.named_steps["regressor"]
+
+    try:
+        feature_names = preprocessor.get_feature_names_out()
+    except Exception:
+        feature_names = [f"feature_{i}" for i in range(len(regressor.coef_))]
+
+    coefficients = pd.DataFrame(
+        {
+            "Feature": feature_names,
+            "Coefficient": regressor.coef_,
+            "Abs_Coefficient": np.abs(regressor.coef_),
+        }
+    ).sort_values("Abs_Coefficient", ascending=False)
+
+    return coefficients
+
+
+def save_actual_vs_predicted_plot(y_test: pd.Series, y_pred: np.ndarray, output_path: Path) -> None:
+    """
+    기존 회귀 파일의 실제값 vs 예측값 산점도를 저장합니다.
+
+    [수정]
+    plt.show() 대신 plt.savefig()를 사용합니다.
+
+    [수정 이유]
+    최종 제출물에는 plots와 code execution results가 필요하므로,
+    화면에만 띄우는 것보다 파일로 저장하는 편이 PPT/보고서에 사용하기 좋습니다.
+    """
+    plt.figure(figsize=(7, 6))
+    plt.scatter(y_test, y_pred, alpha=0.7)
+
+    min_value = min(float(y_test.min()), float(np.min(y_pred)))
+    max_value = max(float(y_test.max()), float(np.max(y_pred)))
+
+    plt.plot(
+        [min_value, max_value],
+        [min_value, max_value],
+        linestyle="--",
+        label="Perfect Prediction Line",
+    )
+
+    trend_coef = np.polyfit(y_test, y_pred, 1)
+    trend_line = np.poly1d(trend_coef)
+    x_line = np.linspace(float(y_test.min()), float(y_test.max()), 100)
+    plt.plot(
+        x_line,
+        trend_line(x_line),
+        linewidth=2,
+        label="Prediction Trend Line",
+    )
+
+    plt.title("Actual vs Predicted Next-Day Fuel Change Amount")
+    plt.xlabel("Actual Next-Day Change Amount")
+    plt.ylabel("Predicted Next-Day Change Amount")
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=300)
+    plt.close()
+
+
+def run_fixed_regression(csv_path: Path = DEFAULT_CSV_PATH, output_dir: Path = OUTPUT_DIR) -> dict[str, object]:
+    """
+    수정된 회귀 전체 실행 함수입니다.
+
+    원본 회귀 파일의 절차를 유지하면서,
+    전처리 오류와 target 불일치 문제를 해결한 end-to-end 회귀 코드입니다.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # 1. 데이터 확인
+    df = load_dataset(csv_path)
+
+    # 2. 오류성 dirty value 처리
+    df = clean_dirty_values(df)
+
+    # 3. 결측치 처리
+    df = fill_time_series_missing_values(df)
+
+    # 4. 제안서 목표에 맞는 회귀 target 생성
+    df = add_regression_target(df)
+
+    # 5. X, y 분리
+    X, y, numeric_cols, categorical_cols = prepare_features_and_target(df)
+
+    # 6. Train / Test Split
+    # 기존 회귀 파일처럼 shuffle=False를 유지합니다.
+    # 이유: 날짜 순서가 있는 데이터이므로 미래 데이터가 train에 섞이지 않게 하기 위함입니다.
+    X_train, X_test, y_train, y_test = train_test_split(
+        X,
+        y,
+        test_size=0.2,
+        shuffle=False,
+    )
+
+    # 7. Multiple Linear Regression Pipeline 생성 및 학습
+    model = build_regression_pipeline(numeric_cols, categorical_cols)
+    model.fit(X_train, y_train)
+
+    # 8. 예측
+    y_pred = model.predict(X_test)
+
+    # 9. 모델 평가
+    metrics = evaluate_model(y_test, y_pred)
+
+    print("\n[Fixed Multiple Linear Regression Results]")
+    for metric_name, metric_value in metrics.items():
+        print(f"{metric_name}: {metric_value:.4f}")
+
+    # 기존 회귀 파일의 SST, SSE, SSR 계산 유지
+    y_true = y_test.values
+    y_pred_array = y_pred
+    sst = np.sum((y_true - np.mean(y_true)) ** 2)
+    sse = np.sum((y_true - y_pred_array) ** 2)
+    ssr = np.sum((y_pred_array - np.mean(y_true)) ** 2)
+
+    sum_of_squares = pd.DataFrame(
+        {
+            "Metric": ["SST", "SSE", "SSR"],
+            "Value": [sst, sse, ssr],
+        }
+    )
+
+    print("\n[Regression Sum of Squares]")
+    print(sum_of_squares)
+
+    # 10. 회귀 계수 확인
+    coefficients = extract_coefficients(model)
+    print("\n[Top 20 Regression Coefficients by Absolute Value]")
+    print(coefficients.head(20))
+
+    # 11. 실제값 vs 예측값 비교
+    comparison = pd.DataFrame(
+        {
+            "Actual_Next_Day_Fuel_Change_Amount": y_test.values,
+            "Predicted_Next_Day_Fuel_Change_Amount": y_pred,
+            "Residual": y_test.values - y_pred,
+        },
+        index=y_test.index,
+    )
+    print("\n[Actual vs Predicted]")
+    print(comparison.head(10))
+
+    # 12. 결과 저장
+    pd.DataFrame([metrics]).to_csv(output_dir / "fixed_regression_metrics.csv", index=False, encoding="utf-8-sig")
+    sum_of_squares.to_csv(output_dir / "fixed_regression_sum_of_squares.csv", index=False, encoding="utf-8-sig")
+    coefficients.to_csv(output_dir / "fixed_regression_coefficients.csv", index=False, encoding="utf-8-sig")
+    comparison.to_csv(output_dir / "fixed_regression_predictions.csv", encoding="utf-8-sig")
+    df.to_csv(output_dir / "fixed_regression_modeling_dataset.csv", index=False, encoding="utf-8-sig")
+    save_actual_vs_predicted_plot(y_test, y_pred, output_dir / "fixed_regression_actual_vs_predicted.png")
+
+    print(f"\nOutput files are saved in: {output_dir.resolve()}")
+
+    return {
+        "model": model,
+        "metrics": metrics,
+        "sum_of_squares": sum_of_squares,
+        "coefficients": coefficients,
+        "comparison": comparison,
+        "output_dir": output_dir,
+    }
+
+
+if __name__ == "__main__":
+    run_fixed_regression()
