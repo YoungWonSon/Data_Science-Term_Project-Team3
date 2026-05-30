@@ -37,7 +37,7 @@ try:
     from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
     from sklearn.model_selection import train_test_split
     from sklearn.pipeline import Pipeline
-    from sklearn.preprocessing import OneHotEncoder, StandardScaler
+    from sklearn.preprocessing import OneHotEncoder, RobustScaler
 except ModuleNotFoundError as exc:
     raise SystemExit(
         "필요한 패키지가 설치되어 있지 않습니다. "
@@ -246,7 +246,11 @@ def build_regression_pipeline(numeric_cols: list[str], categorical_cols: list[st
     numeric_pipeline = Pipeline(
         steps=[
             ("imputer", SimpleImputer(strategy="median")),
-            ("scaler", StandardScaler()),
+            # 3번 전처리 역할에서 RobustScaler를 최종 방향으로 정했기 때문에
+            # 회귀 수정본도 StandardScaler가 아니라 RobustScaler를 사용합니다.
+            # 이유: 이 데이터는 위기 상황의 극단값과 오류성 dirty value가 섞여 있어
+            # 평균/표준편차 기반 StandardScaler보다 중앙값/IQR 기반 RobustScaler가 더 안정적입니다.
+            ("scaler", RobustScaler()),
         ]
     )
 
