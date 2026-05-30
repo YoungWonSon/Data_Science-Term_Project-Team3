@@ -51,7 +51,7 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import GridSearchCV, KFold, StratifiedKFold, cross_validate
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, RobustScaler, StandardScaler
+from sklearn.preprocessing import OneHotEncoder, RobustScaler
 from sklearn.tree import DecisionTreeClassifier, plot_tree
 
 
@@ -310,7 +310,7 @@ def prepare_modeling_data(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series, pd
 def build_preprocessor(
     numeric_cols: List[str],
     categorical_cols: List[str],
-    scaler_name: str = "standard",
+    scaler_name: str = "robust",
     imputer_strategy: str = "median",
 ) -> ColumnTransformer:
     """
@@ -318,12 +318,13 @@ def build_preprocessor(
 
     train 데이터에만 fit되고 test 데이터에는 transform만 되도록 Pipeline 내부에 넣는다.
     """
-    if scaler_name == "standard":
-        scaler = StandardScaler()
-    elif scaler_name == "robust":
-        scaler = RobustScaler()
-    else:
-        raise ValueError("scaler_name must be 'standard' or 'robust'.")
+    # 3번 역할의 최종 전처리 방향을 반영해 RobustScaler만 사용한다.
+    # 기존 통합본에는 StandardScaler도 남아 있었지만,
+    # 이 데이터셋은 999/-99 같은 오류성 값과 위기 상황의 극단값이 섞여 있어
+    # 중앙값과 IQR 기반으로 스케일링하는 RobustScaler가 역할 설명과 더 잘 맞는다.
+    if scaler_name != "robust":
+        raise ValueError("scaler_name must be 'robust' in the final integrated version.")
+    scaler = RobustScaler()
 
     numeric_pipeline = Pipeline(
         steps=[
@@ -387,7 +388,7 @@ def run_classification(
     X_test = X_test.drop(columns=["Date"], errors="ignore")
     categorical_cols = [c for c in categorical_cols if c != "Date"]
 
-    preprocessor = build_preprocessor(numeric_cols, categorical_cols, scaler_name="standard", imputer_strategy="median")
+    preprocessor = build_preprocessor(numeric_cols, categorical_cols, scaler_name="robust", imputer_strategy="median")
     classifier = DecisionTreeClassifier(random_state=random_state)
     pipeline = Pipeline(steps=[("preprocess", preprocessor), ("classifier", classifier)])
 
@@ -419,8 +420,20 @@ def run_classification(
         "recall_macro": recall_score(y_test, y_pred, average="macro", zero_division=0),
         "f1_macro": f1_score(y_test, y_pred, average="macro", zero_division=0),
     }
-    report_dict = classification_report(y_test, y_pred, zero_division=0, output_dict=True)
-    confusion_df = pd.DataFrame(confusion_matrix(y_test, y_pred), index=["actual_0", "actual_1"], columns=["pred_0", "pred_1"])
+    report_dict = classification_report(y_test, y_pred, labels=[0, 1], zero_division=0, output_dict=True)
+
+    # [수정 이유]
+    # confusion_matrix는 기본적으로 y_test와 y_pred에 실제로 등장한 class만 사용해 행렬을 만든다.
+    # 시간 순서 기반 split에서는 test 구간에 0 또는 1 한 class만 들어갈 수 있고,
+    # 이 경우 confusion_matrix 결과가 1x1이 되어 고정된 2x2 index/columns와 shape mismatch가 발생한다.
+    #
+    # [해결]
+    # labels=[0, 1]을 명시해 test set에 한 class만 존재하더라도 항상 2x2 confusion matrix가 생성되도록 한다.
+    confusion_df = pd.DataFrame(
+        confusion_matrix(y_test, y_pred, labels=[0, 1]),
+        index=["actual_0", "actual_1"],
+        columns=["pred_0", "pred_1"],
+    )
     cv_results_df = pd.DataFrame(grid_search.cv_results_).sort_values("rank_test_score")
 
     pd.DataFrame([metrics]).to_csv(out / "classification_test_metrics.csv", index=False, encoding="utf-8-sig")
@@ -539,7 +552,7 @@ def run_regression(
     result_rows = []
     fitted_entries = []
     for imputer_strategy in ["median", "mean"]:
-        for scaler_name in ["standard", "robust"]:
+        for scaler_name in ["robust"]:
             preprocessor = build_preprocessor(numeric_cols, categorical_cols, scaler_name=scaler_name, imputer_strategy=imputer_strategy)
             model = Pipeline(
                 steps=[
@@ -667,7 +680,9 @@ def run_clustering(
     available_cols = [col for col in clustering_cols if col in df.columns]
     X = df[available_cols].select_dtypes(include=[np.number]).dropna()
 
-    scaler = StandardScaler()
+    # K-Means도 거리 기반 모델이므로 스케일링이 필요하다.
+    # 3번 역할의 RobustScaler 방향과 맞추기 위해 clustering에서도 RobustScaler를 사용한다.
+    scaler = RobustScaler()
     X_scaled = scaler.fit_transform(X)
 
     k_results = []
