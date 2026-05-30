@@ -1,28 +1,9 @@
-"""
-Team 3 Data Science Term Project - Integrated Pipeline (English comments)
-
-This file is the English-comment version of the final integrated code.
-It is based on the team's submitted files:
-- Seo_Jangwon_EDA.py: data structure, missing values, dirty values, distribution, correlation
-- Jo_Minseo_*.py: missing value handling, dirty value replacement, one-hot encoding, scaling
-- Classification_Decison_Tree.py: Decision Tree classification, GridSearchCV, k-fold CV
-- KIm_Dana_Multi-Linear-Regression.py: multiple linear regression and regression metrics
-- KIm_Dana_K-Mean-Clustering.py: K-Means, silhouette score, elbow method, PCA visualization
-- Kwon_Keonho_Regression_OpenSource.py: reusable top-level pipeline and output saving style
-
-Final objectives:
-1. Classification: predict whether local fuel price rises on the next day.
-2. Regression: predict the next-day local fuel price change amount.
-3. Clustering: perform supporting market-pattern analysis using fuel, crisis, FX, and inflation features.
-"""
-
-from __future__ import annotations
-
-import argparse
 import json
-import warnings
+import os
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+
+os.environ.setdefault("MPLCONFIGDIR", str(Path(__file__).resolve().parent / ".mplconfig"))
+os.environ.setdefault("LOKY_MAX_CPU_COUNT", "1")
 
 import matplotlib
 
@@ -31,308 +12,320 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import seaborn as sns
 from sklearn.cluster import KMeans
 from sklearn.compose import ColumnTransformer
 from sklearn.decomposition import PCA
 from sklearn.impute import SimpleImputer
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import Ridge
 from sklearn.metrics import (
+    ConfusionMatrixDisplay,
     accuracy_score,
     classification_report,
-    confusion_matrix,
-    f1_score,
-    mean_absolute_error,
     mean_squared_error,
-    precision_score,
     r2_score,
-    recall_score,
     silhouette_score,
 )
-from sklearn.model_selection import GridSearchCV, KFold, StratifiedKFold, cross_validate, train_test_split
+from sklearn.model_selection import GridSearchCV, cross_val_score, train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, RobustScaler
 from sklearn.tree import DecisionTreeClassifier, plot_tree
 
 
-warnings.filterwarnings("ignore")
+# ============================================================
+# Team 3 Term Project Integrated Pipeline
+# English-comment version
+# ============================================================
+# This file integrates the code and ideas received from the team members.
+#
+# Reflected team roles:
+# 1. Role 2 (EDA): dataset structure, missing values, outliers, statistics,
+#    distributions, correlation analysis, and country-level fuel price differences
+# 2. Role 3 (Preprocessing): missing-value handling, dirty-value handling,
+#    Country encoding, and Robust scaling
+# 3. Role 4 (Modeling): Decision Tree classification, Ridge regression,
+#    and K-Means clustering
+#
+# PM integration decisions:
+# - Keep Plan A: use Fuel_Price_Change_Percent to create a 3-class target:
+#   No_Increase / Slight_Increase / Large_Increase
+# - Apply the Role 4 requirement: train_test_split uses shuffle=True
+# - Apply the Role 3 requirement: scaling uses RobustScaler only
+# - Handle dirty values consistently:
+#   Fuel_Price_Change_Percent > 100, especially 999.0, is treated as a system error
+#   News_Sentiment_Score == -99.0 is also treated as a system error
+# - Prevent data leakage:
+#   imputation and scaling are not fitted on the full dataset.
+#   They are fitted only on the training set and then applied to the test set.
+#
+# ------------------------------------------------------------
+# Detailed integration of the original team comments and intent
+# ------------------------------------------------------------
+# Role 2 (Data Description and EDA) emphasized the following:
+# - The purpose of EDA is to understand the dataset structure, missing values,
+#   outliers, feature distributions, and relationships between variables before
+#   preprocessing and modeling.
+# - df.shape is used to check the number of rows and columns.
+# - df.info() is used to inspect feature dtypes and non-null counts.
+# - df.describe() is used to check mean, standard deviation, minimum, maximum,
+#   and quartiles, which reveal scale differences and possible abnormal values.
+# - isnull().sum() is used to count missing values by column.
+# - Values such as 999.0 and -99.0 are treated separately because they are more
+#   likely to be system-entry errors than meaningful geopolitical crisis signals.
+# - Histograms show where numeric values are concentrated.
+# - Boxplots show median, quartiles, and visually detectable outliers.
+# - Correlation heatmaps represent relationships between variables:
+#   values close to 1 indicate strong positive correlation, values close to -1
+#   indicate strong negative correlation, and values close to 0 indicate weak relation.
+# - Country-level Fuel_Price_Local values use very different currency units and scales,
+#   so a log-scale boxplot makes small and large ranges visible together.
+#
+# Role 3 (Preprocessing and Feature Engineering) emphasized the following:
+# - The key missing-value columns are WTI, Brent, Fuel_Price_Local,
+#   Shipping_Cost_Index, and USD_Exchange_Rate.
+# - Because the dataset has a country-level time-series structure, filling missing
+#   values using nearby values within the same country is more meaningful than
+#   using a global average.
+# - The original code experimented with ffill followed by bfill. In this final
+#   integration, imputation is done inside the model Pipeline using the training-set
+#   median to reduce leakage from the test set.
+# - Country is a nominal categorical feature, not an ordinal feature. Therefore,
+#   one-hot encoding is more appropriate than label encoding.
+# - IQR-based statistical outliers should not automatically be deleted because
+#   large changes may be meaningful under geopolitical crisis conditions.
+#   Only clear error-type values such as 999.0 and -99.0 are handled directly.
+# - Scaling is necessary because models can be distorted by variables with very
+#   different units and ranges.
+# - This final version uses RobustScaler only, as requested. RobustScaler relies
+#   on the median and IQR, so it is less sensitive to extreme values.
+#
+# Role 4 (Modeling and Evaluation) emphasized the following:
+# - Classification groups Fuel_Price_Change_Percent into
+#   No_Increase / Slight_Increase / Large_Increase.
+# - Decision Trees are useful because their decision rules can be visualized and
+#   explained in a presentation.
+# - GridSearchCV compares parameter combinations to find the best Decision Tree setup.
+# - k-fold cross validation checks whether the classification model is reliable
+#   beyond one random train/test split and helps detect overfitting.
+# - classification_report provides precision, recall, and F1-score, which describe
+#   class-level performance beyond simple accuracy.
+# - Feature importance explains which variables were most influential in the tree.
+# - Regression predicts the continuous magnitude of Fuel_Price_Change_Percent.
+# - MSE, RMSE, and R2 are standard metrics for regression error and explanatory power.
+# - SST, SSE, and SSR are useful concepts for understanding variance decomposition
+#   in regression analysis.
+# - K-Means clusters similar market conditions.
+# - Inertia evaluates within-cluster compactness, while silhouette score evaluates
+#   both compactness and separation.
+# - The elbow method and silhouette score provide evidence for selecting the number
+#   of clusters.
+# - PCA 2D visualization is used to show high-dimensional clustering results in a
+#   presentation-friendly two-dimensional view.
 
 
-DEFAULT_CSV_PATH = (
-    "/Users/winter/Documents/가천대학교/2026년 3학년 1학기/"
-    "Data Science/Term Project/데이터 셋/Iran_War_Global_Fuel_Crisis_Dirty_Dataset.csv"
-)
+DATA_FILE_NAME = "Iran_War_Global_Fuel_Crisis_Dirty_Dataset.csv"
 
 
-TEAM_CODE_REFERENCES = {
-    "eda": "Seo_Jangwon_EDA.py",
-    "missing_values": "Jo_Minseo_fillna.py",
-    "one_hot_encoding": "Jo_Minseo_Onehotencoding.py",
-    "outlier_detection": "Jo_Minseo_Outlier.py",
-    "outlier_delete_test": "Jo_Minseo_Outlierdelete.py",
-    "outlier_replace": "Jo_Minseo_Outlierreplace.py",
-    "scaling": "Jo_Minseo_Scaling.py, Kim_Dana_Standarization_Data.py",
-    "classification": "Classification_Decison_Tree.py",
-    "regression": "KIm_Dana_Multi-Linear-Regression.py",
-    "clustering": "KIm_Dana_K-Mean-Clustering.py",
-}
+# Multiple candidate paths are used for the dataset.
+# Reason:
+# - The team member files used different local paths or relative paths.
+# - The final integrated script should still run even if the execution directory changes.
+# - The script first checks data/ next to this file, then known project locations.
+DATA_PATH_CANDIDATES = [
+    Path(__file__).resolve().parent / "data" / DATA_FILE_NAME,
+    Path(__file__).resolve().parent / DATA_FILE_NAME,
+    Path(
+        "/Users/winter/Documents/가천대학교/2026년 3학년 1학기/Data Science/Term Project/데이터 셋"
+    )
+    / DATA_FILE_NAME,
+    Path(
+        "/Users/winter/Documents/가천대학교/2026년 3학년 1학기/Data Science/Term Project/3번 (조민서)"
+    )
+    / DATA_FILE_NAME,
+]
 
 
-def make_one_hot_encoder() -> OneHotEncoder:
-    """Create a OneHotEncoder that works with both newer and older scikit-learn versions."""
+OUTPUT_DIR = Path(__file__).resolve().parent / "outputs_en"
+FIGURE_DIR = OUTPUT_DIR / "figures"
+METRIC_DIR = OUTPUT_DIR / "metrics"
+
+
+def make_one_hot_encoder():
+    """Create a OneHotEncoder while absorbing scikit-learn version differences."""
     try:
         return OneHotEncoder(handle_unknown="ignore", sparse_output=False)
     except TypeError:
         return OneHotEncoder(handle_unknown="ignore", sparse=False)
 
 
-def ensure_output_dirs(output_dir: str | Path) -> Dict[str, Path]:
-    """Create output folders for EDA, classification, regression, and clustering."""
-    base = Path(output_dir)
-    dirs = {
-        "base": base,
-        "eda": base / "eda",
-        "classification": base / "classification",
-        "regression": base / "regression",
-        "clustering": base / "clustering",
-    }
-    for path in dirs.values():
-        path.mkdir(parents=True, exist_ok=True)
-    return dirs
+def resolve_data_path():
+    """Return the first existing CSV path from the candidate list."""
+    for path in DATA_PATH_CANDIDATES:
+        if path.exists():
+            return path
+    tried = "\n".join(str(path) for path in DATA_PATH_CANDIDATES)
+    raise FileNotFoundError(f"Dataset was not found. Tried:\n{tried}")
 
 
-def load_dataset(csv_path: str | Path) -> pd.DataFrame:
-    """Load the original dirty CSV dataset using pandas, as in the submitted team code."""
-    df = pd.read_csv(csv_path, encoding="utf-8")
-    if "Date" not in df.columns or "Country" not in df.columns:
-        raise ValueError("Dataset must contain 'Date' and 'Country' columns.")
+def prepare_output_dirs():
+    """Create output directories for tables, metrics, and figures."""
+    FIGURE_DIR.mkdir(parents=True, exist_ok=True)
+    METRIC_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def load_data():
+    """Load the CSV file into a pandas DataFrame."""
+    data_path = resolve_data_path()
+    df = pd.read_csv(data_path, encoding="utf-8")
+    print(f"[LOAD] Data path: {data_path}")
+    print(f"[LOAD] Shape: {df.shape}")
     return df
 
 
-def run_eda(df: pd.DataFrame, output_dir: str | Path) -> Dict[str, pd.DataFrame]:
-    """
-    Run EDA based on the role 2 code.
+def clean_dirty_values(df):
+    """Apply consistent dirty-value handling before modeling."""
+    cleaned = df.copy()
 
-    The original file mostly printed results and displayed figures.
-    This integrated version saves tables and plots so they can be reused in the report and PPT.
-    """
-    out = Path(output_dir)
-    out.mkdir(parents=True, exist_ok=True)
-
-    shape_df = pd.DataFrame({"rows": [df.shape[0]], "columns": [df.shape[1]]})
-    dtypes_df = pd.DataFrame({"column": df.columns, "dtype": [str(df[c].dtype) for c in df.columns]})
-    describe_df = df.describe(include="all").T
-    missing_df = df.isna().sum().reset_index()
-    missing_df.columns = ["column", "missing_count"]
-    missing_df["missing_percent"] = missing_df["missing_count"] / len(df) * 100
-
-    error_values_df = pd.DataFrame(
-        {
-            "column": df.columns,
-            "count_999": [(df[c] == 999.0).sum() if pd.api.types.is_numeric_dtype(df[c]) else 0 for c in df.columns],
-            "count_minus_99": [
-                (df[c] == -99.0).sum() if pd.api.types.is_numeric_dtype(df[c]) else 0 for c in df.columns
-            ],
-        }
+    # Date cannot be used directly as a model input string.
+    # Date_Ordinal numerically represents the time flow and can be used as a feature.
+    cleaned["Date"] = pd.to_datetime(cleaned["Date"], errors="coerce")
+    cleaned["Date_Ordinal"] = cleaned["Date"].map(
+        lambda value: value.toordinal() if pd.notna(value) else np.nan
     )
 
-    corr_matrix = df.corr(numeric_only=True)
-    corr_pairs = corr_matrix.abs().unstack().sort_values(ascending=False)
-    corr_pairs = corr_pairs[corr_pairs < 1].drop_duplicates().head(20).reset_index()
-    corr_pairs.columns = ["feature_1", "feature_2", "abs_correlation"]
+    # Sorting by country and date makes the time-series structure easier to interpret.
+    cleaned = cleaned.sort_values(["Country", "Date"]).reset_index(drop=True)
 
-    shape_df.to_csv(out / "dataset_shape.csv", index=False, encoding="utf-8-sig")
-    dtypes_df.to_csv(out / "dataset_dtypes.csv", index=False, encoding="utf-8-sig")
-    describe_df.to_csv(out / "descriptive_statistics.csv", encoding="utf-8-sig")
-    missing_df.to_csv(out / "missing_values.csv", index=False, encoding="utf-8-sig")
-    error_values_df.to_csv(out / "dirty_error_values.csv", index=False, encoding="utf-8-sig")
-    corr_pairs.to_csv(out / "top_correlations.csv", index=False, encoding="utf-8-sig")
+    # A Fuel_Price_Change_Percent value of 999.0 is not a realistic fuel price change.
+    # Since the normal maximum is around 60, values above 100 are treated as system errors.
+    cleaned.loc[
+        cleaned["Fuel_Price_Change_Percent"] > 100,
+        "Fuel_Price_Change_Percent",
+    ] = np.nan
 
-    # Histogram visualization from the EDA file.
-    df.hist(figsize=(16, 11))
+    # A News_Sentiment_Score value of -99.0 is far outside the normal sentiment range.
+    # It should not be interpreted as an extremely negative news sentiment.
+    cleaned.loc[cleaned["News_Sentiment_Score"] == -99.0, "News_Sentiment_Score"] = np.nan
+
+    return cleaned
+
+
+def run_eda(raw_df, cleaned_df):
+    """Run the integrated EDA workflow and save presentation-ready outputs."""
+    print("[EDA] Saving descriptive tables and figures...")
+
+    # [Role 2] Save missing values in the raw dataset.
+    # This table supports the preprocessing team's decision about which columns need treatment.
+    raw_df.isna().sum().rename("missing_count").to_csv(METRIC_DIR / "missing_values_raw.csv")
+
+    # [Role 2] Save the describe() table.
+    # Mean, standard deviation, minimum, and maximum reveal scale differences and abnormal values.
+    raw_df.describe(include="all").to_csv(METRIC_DIR / "descriptive_statistics_raw.csv")
+
+    # Save missing values after converting dirty values to NaN.
+    # This shows how much missingness increased after handling 999.0 and -99.0.
+    cleaned_df.isna().sum().rename("missing_count").to_csv(
+        METRIC_DIR / "missing_values_after_dirty_value_cleaning.csv"
+    )
+
+    # [Plan A / Role 4] Save the class distribution of the 3-class target.
+    # This is necessary for interpreting whether class imbalance affects model performance.
+    target_counts = pd.cut(
+        cleaned_df["Fuel_Price_Change_Percent"],
+        bins=[-np.inf, 0, 5, np.inf],
+        labels=["No_Increase", "Slight_Increase", "Large_Increase"],
+        include_lowest=True,
+    ).value_counts(dropna=False)
+    target_counts.rename("count").to_csv(METRIC_DIR / "classification_target_counts.csv")
+
+    numeric_cols = cleaned_df.select_dtypes(include=["number"]).columns
+
+    # This histogram section integrates the EDA team member's numeric-distribution check.
+    cleaned_df[numeric_cols].hist(figsize=(18, 12), bins=30)
     plt.tight_layout()
-    plt.savefig(out / "numeric_histograms.png", dpi=300)
+    plt.savefig(FIGURE_DIR / "eda_numeric_histograms.png", dpi=150)
     plt.close()
 
-    # Exclude the obvious 999 dirty value before drawing the fuel-change boxplot.
-    if "Fuel_Price_Change_Percent" in df.columns:
-        filtered_data = df[df["Fuel_Price_Change_Percent"] < 100]
-        plt.figure(figsize=(8, 4))
-        sns.boxplot(
-            x=filtered_data["Fuel_Price_Change_Percent"],
-            flierprops={
-                "marker": "o",
-                "markerfacecolor": "red",
-                "markeredgecolor": "red",
-                "markersize": 4,
-            },
-        )
-        plt.title("Fuel Price Change Percent Boxplot")
-        plt.xlabel("Fuel Price Change Percent")
-        plt.tight_layout()
-        plt.savefig(out / "fuel_price_change_boxplot.png", dpi=300)
-        plt.close()
-
-    # Correlation heatmap from the EDA file.
+    # The correlation heatmap helps identify strongly related features,
+    # such as WTI, Brent, and OPEC oil price benchmarks.
+    corr = cleaned_df[numeric_cols].corr()
     plt.figure(figsize=(14, 10))
-    sns.heatmap(corr_matrix, annot=True, cmap="coolwarm", fmt=".2f")
-    plt.xticks(rotation=45, ha="right", fontsize=8)
-    plt.yticks(rotation=0, fontsize=9)
+    plt.imshow(corr, cmap="coolwarm", vmin=-1, vmax=1)
+    plt.colorbar(label="Correlation")
+    plt.xticks(range(len(corr.columns)), corr.columns, rotation=60, ha="right", fontsize=7)
+    plt.yticks(range(len(corr.index)), corr.index, fontsize=7)
     plt.title("Correlation Heatmap")
     plt.tight_layout()
-    plt.savefig(out / "correlation_heatmap.png", dpi=300)
+    plt.savefig(FIGURE_DIR / "eda_correlation_heatmap.png", dpi=150)
     plt.close()
 
-    # Country-level local fuel price distribution. Log scale is kept because local currencies differ greatly.
-    if {"Country", "Fuel_Price_Local"}.issubset(df.columns):
-        plt.figure(figsize=(14, 7))
-        sns.boxplot(
-            x="Country",
-            y="Fuel_Price_Local",
-            data=df,
-            flierprops={
-                "marker": "o",
-                "markerfacecolor": "red",
-                "markeredgecolor": "red",
-                "markersize": 4,
-            },
-        )
-        plt.yscale("log")
-        plt.title("Fuel Price Distribution by Country")
-        plt.xlabel("Country")
-        plt.ylabel("Fuel Price Local (Log Scale)")
-        plt.xticks(rotation=45, ha="right")
-        plt.tight_layout()
-        plt.savefig(out / "fuel_price_by_country_boxplot.png", dpi=300)
-        plt.close()
-
-    return {
-        "shape": shape_df,
-        "dtypes": dtypes_df,
-        "describe": describe_df,
-        "missing": missing_df,
-        "error_values": error_values_df,
-        "top_correlations": corr_pairs,
-    }
-
-
-def clean_dirty_values(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Replace obvious dirty values based on Jo_Minseo_Outlierreplace.py.
-
-    The project treats 999.0 and -99.0 as input/system errors, not meaningful crisis extremes.
-    General IQR outliers are not removed automatically because crisis-related extremes may be informative.
-    """
-    df = df.copy()
-
-    if "Fuel_Price_Change_Percent" in df.columns:
-        df["Fuel_Price_Change_Percent"] = df["Fuel_Price_Change_Percent"].replace(999.0, np.nan)
-
-    if "News_Sentiment_Score" in df.columns:
-        df["News_Sentiment_Score"] = df["News_Sentiment_Score"].replace(-99.0, np.nan)
-
-    return df
-
-
-def fill_time_series_missing_values(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Fill missing values based on Jo_Minseo_fillna.py.
-
-    The submitted code used country-level forward fill and backward fill.
-    To reduce future-information leakage in the final predictive pipeline,
-    this version uses forward fill first, then country median and global median fallbacks.
-    """
-    df = df.copy()
-    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-    df = df.sort_values(["Country", "Date"]).reset_index(drop=True)
-
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    for col in numeric_cols:
-        df[col] = df.groupby("Country")[col].transform(lambda s: s.ffill())
-        df[col] = df.groupby("Country")[col].transform(lambda s: s.fillna(s.median()))
-        if df[col].isna().sum() > 0:
-            df[col] = df[col].fillna(df[col].median())
-
-    return df
-
-
-def add_next_day_targets(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Create next-day targets that match the proposal.
-
-    Classification target:
-        Next_Day_Fuel_Rise = 1 if next day's Fuel_Price_Change_Percent is positive, else 0
-
-    Regression target:
-        Next_Day_Fuel_Change_Amount = next day's Fuel_Price_Local - today's Fuel_Price_Local
-    """
-    df = df.copy()
-    df = df.sort_values(["Country", "Date"]).reset_index(drop=True)
-
-    df["Next_Day_Fuel_Price_Local"] = df.groupby("Country")["Fuel_Price_Local"].shift(-1)
-    df["Next_Day_Fuel_Change_Percent"] = df.groupby("Country")["Fuel_Price_Change_Percent"].shift(-1)
-    df["Next_Day_Fuel_Change_Amount"] = df["Next_Day_Fuel_Price_Local"] - df["Fuel_Price_Local"]
-    df["Next_Day_Fuel_Rise"] = (df["Next_Day_Fuel_Change_Percent"] > 0).astype("Int64")
-
-    target_cols = ["Next_Day_Fuel_Price_Local", "Next_Day_Fuel_Change_Percent", "Next_Day_Fuel_Change_Amount", "Next_Day_Fuel_Rise"]
-    df = df.dropna(subset=target_cols).reset_index(drop=True)
-    df["Next_Day_Fuel_Rise"] = df["Next_Day_Fuel_Rise"].astype(int)
-
-    return df
-
-
-def prepare_modeling_data(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series, pd.Series, List[str], List[str]]:
-    """
-    Build X, classification y, and regression y.
-
-    The Date_Ordinal idea from Kim_Dana_Standarization_Data.py is preserved,
-    while future target columns are excluded from features.
-    """
-    df = df.copy()
-    df["Date_Ordinal"] = df["Date"].map(lambda x: x.toordinal() if pd.notna(x) else np.nan)
-
-    drop_cols = [
-        "Next_Day_Fuel_Rise",
-        "Next_Day_Fuel_Change_Amount",
-        "Next_Day_Fuel_Price_Local",
-        "Next_Day_Fuel_Change_Percent",
+    # Country-level fuel prices differ heavily because local currencies differ.
+    # A log-scale boxplot makes small and large price ranges visible together.
+    plt.figure(figsize=(14, 7))
+    countries = sorted(cleaned_df["Country"].dropna().unique())
+    country_data = [
+        cleaned_df.loc[cleaned_df["Country"] == country, "Fuel_Price_Local"].dropna()
+        for country in countries
     ]
-    X = df.drop(columns=drop_cols, errors="ignore")
-    y_classification = df["Next_Day_Fuel_Rise"]
-    y_regression = df["Next_Day_Fuel_Change_Amount"]
+    plt.boxplot(country_data, tick_labels=countries, showfliers=True)
+    plt.yscale("log")
+    plt.xticks(rotation=45, ha="right")
+    plt.title("Fuel Price Distribution by Country")
+    plt.xlabel("Country")
+    plt.ylabel("Fuel Price Local (Log Scale)")
+    plt.tight_layout()
+    plt.savefig(FIGURE_DIR / "eda_fuel_price_by_country_boxplot.png", dpi=150)
+    plt.close()
 
-    categorical_cols = X.select_dtypes(include=["object", "category"]).columns.tolist()
-    numeric_cols = X.select_dtypes(include=[np.number]).columns.tolist()
 
-    return X, y_classification, y_regression, numeric_cols, categorical_cols
+def add_classification_target(df):
+    """Create the 3-class classification target for Plan A."""
+    result = df.copy()
+    result["Fuel_Rise_Level"] = pd.cut(
+        result["Fuel_Price_Change_Percent"],
+        bins=[-np.inf, 0, 5, np.inf],
+        labels=["No_Increase", "Slight_Increase", "Large_Increase"],
+        include_lowest=True,
+    )
+    return result
 
 
-def build_preprocessor(
-    numeric_cols: List[str],
-    categorical_cols: List[str],
-    scaler_name: str = "robust",
-    imputer_strategy: str = "median",
-) -> ColumnTransformer:
-    """
-    Combine imputation, encoding, and scaling in one sklearn preprocessor.
+def make_feature_matrix(df):
+    """Build X by removing target columns and the raw Date column."""
+    drop_cols = ["Date", "Fuel_Price_Change_Percent", "Fuel_Rise_Level"]
+    return df.drop(columns=[col for col in drop_cols if col in df.columns])
 
-    Because this preprocessor is inside a Pipeline, it is fitted only on training data
-    and then applied to test data, reducing data leakage.
-    """
-    # The final preprocessing direction from role 3 uses RobustScaler only.
-    # The earlier integrated version still allowed StandardScaler, but this dataset contains
-    # both error-type dirty values and crisis-related extreme values, so median/IQR-based
-    # RobustScaler is more consistent with the team's preprocessing rationale.
-    if scaler_name != "robust":
-        raise ValueError("scaler_name must be 'robust' in the final integrated version.")
-    scaler = RobustScaler()
 
+def split_column_types(X):
+    """Split feature columns into numeric and categorical groups."""
+    numeric_cols = X.select_dtypes(include=["int64", "float64", "int32", "float32"]).columns.tolist()
+    categorical_cols = X.select_dtypes(include=["object", "category", "bool"]).columns.tolist()
+    return numeric_cols, categorical_cols
+
+
+def build_preprocessor(X):
+    """Build a ColumnTransformer for imputation, encoding, and Robust scaling."""
+    numeric_cols, categorical_cols = split_column_types(X)
+
+    # Numeric preprocessing:
+    # 1. Fill missing values with the training-set median.
+    #    The original Role 3 code experimented with time-series ffill/bfill,
+    #    but the final evaluation should avoid leaking information from the test set.
+    #    Therefore, imputation is fitted inside the Pipeline using training data only.
+    # 2. Use RobustScaler only, as requested.
+    #    RobustScaler uses median and IQR, making it less sensitive to extreme values.
+    #    Large crisis-driven changes may be meaningful, so this approach reduces
+    #    scale influence without automatically deleting all large movements.
     numeric_pipeline = Pipeline(
         steps=[
-            ("imputer", SimpleImputer(strategy=imputer_strategy)),
-            ("scaler", scaler),
+            ("imputer", SimpleImputer(strategy="median")),
+            ("scaler", RobustScaler()),
         ]
     )
+
+    # Categorical preprocessing:
+    # Country has no natural order, so one-hot encoding is appropriate.
+    # Label encoding would create an artificial numeric order such as
+    # USA < UK < Germany, which does not exist in the real data.
     categorical_pipeline = Pipeline(
         steps=[
             ("imputer", SimpleImputer(strategy="most_frequent")),
@@ -340,7 +333,7 @@ def build_preprocessor(
         ]
     )
 
-    return ColumnTransformer(
+    preprocessor = ColumnTransformer(
         transformers=[
             ("num", numeric_pipeline, numeric_cols),
             ("cat", categorical_pipeline, categorical_cols),
@@ -348,353 +341,259 @@ def build_preprocessor(
         remainder="drop",
     )
 
+    return preprocessor, numeric_cols, categorical_cols
 
-def random_train_test_split(
-    X: pd.DataFrame,
-    y: pd.Series,
-    test_size: float = 0.2,
-    random_state: int = 42,
-    stratify: pd.Series | None = None,
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
-    """
-    Split train and test data with shuffle=True based on team feedback.
 
-    Reason for change:
-    The earlier integrated version used a conservative chronological split.
-    However, compared with the role 4 modeling code, the test set could become concentrated
-    in a specific date/country segment and make the result look abnormally downgraded.
+def get_feature_names(preprocessor, numeric_cols, categorical_cols):
+    """Recover feature names after preprocessing for model interpretation."""
+    feature_names = list(numeric_cols)
+    if categorical_cols:
+        encoder = preprocessor.named_transformers_["cat"].named_steps["onehot"]
+        feature_names.extend(encoder.get_feature_names_out(categorical_cols).tolist())
+    return feature_names
 
-    Final choice:
-    For this course project, use a shuffled random split for stable model comparison.
-    For classification, stratify=y is used to preserve the class ratio in train/test.
 
-    Important:
-    Both train and test data are preprocessed.
-    The Pipeline fits preprocessing rules only on train data and applies transform to test data.
-    """
-    return train_test_split(
+def run_classification(cleaned_df):
+    """Run the integrated Decision Tree classification workflow."""
+    print("[CLASSIFICATION] Training Decision Tree classifier...")
+
+    # [Role 4] Convert Fuel_Price_Change_Percent into the Plan A target:
+    # No_Increase / Slight_Increase / Large_Increase.
+    # This keeps the classification direction used in the team member's code.
+    model_df = add_classification_target(cleaned_df)
+    model_df = model_df[model_df["Fuel_Rise_Level"].notna()].copy()
+
+    # Fuel_Price_Change_Percent is removed from X because it was used to create y.
+    # Keeping it as a feature would cause target leakage: the model would see the answer.
+    X = make_feature_matrix(model_df)
+    y = model_df["Fuel_Rise_Level"]
+
+    preprocessor, numeric_cols, categorical_cols = build_preprocessor(X)
+
+    # Required integration decision for Role 4: shuffle=True.
+    # stratify=y keeps the class distribution similar in train and test sets.
+    # This reduces the chance that one class is over- or under-represented in the test set.
+    X_train, X_test, y_train, y_test = train_test_split(
         X,
         y,
-        test_size=test_size,
+        test_size=0.2,
         shuffle=True,
-        random_state=random_state,
-        stratify=stratify,
-    )
-
-
-def run_classification(
-    X: pd.DataFrame,
-    y: pd.Series,
-    numeric_cols: List[str],
-    categorical_cols: List[str],
-    output_dir: str | Path,
-    cv: int = 5,
-    test_size: float = 0.2,
-    random_state: int = 42,
-) -> Dict[str, Any]:
-    """Run Decision Tree classification using the role 4 model structure, revised for next-day binary prediction."""
-    out = Path(output_dir)
-    out.mkdir(parents=True, exist_ok=True)
-
-    X_train, X_test, y_train, y_test = random_train_test_split(
-        X,
-        y,
-        test_size=test_size,
-        random_state=random_state,
         stratify=y,
+        random_state=42,
     )
-    X_train = X_train.drop(columns=["Date"], errors="ignore")
-    X_test = X_test.drop(columns=["Date"], errors="ignore")
-    categorical_cols = [c for c in categorical_cols if c != "Date"]
 
-    preprocessor = build_preprocessor(numeric_cols, categorical_cols, scaler_name="robust", imputer_strategy="median")
-    pipeline = Pipeline(
+    classifier = Pipeline(
         steps=[
-            ("preprocess", preprocessor),
-            ("classifier", DecisionTreeClassifier(random_state=random_state)),
+            # The preprocessor and model are combined in a Pipeline.
+            # This ensures that imputation and scaling are fitted only on the training fold
+            # during cross validation, preventing leakage inside each fold.
+            ("preprocessor", preprocessor),
+            ("model", DecisionTreeClassifier(random_state=42)),
         ]
     )
 
+    # Candidate Decision Tree parameters:
+    # criterion: split-quality criterion
+    # max_depth: maximum tree depth
+    # min_samples_split: minimum samples required to split an internal node
+    # min_samples_leaf: minimum samples required in a leaf node
+    # class_weight: whether to compensate for class imbalance
     param_grid = {
-        "classifier__criterion": ["gini", "entropy"],
-        "classifier__max_depth": [3, 4, 5, 6, None],
-        "classifier__min_samples_split": [5, 10, 20, 30],
-        "classifier__min_samples_leaf": [5, 10, 20, 30],
-        "classifier__class_weight": [None, "balanced"],
+        "model__criterion": ["gini", "entropy"],
+        "model__max_depth": [3, 4, 5, 6, None],
+        "model__min_samples_split": [5, 10, 20, 30],
+        "model__min_samples_leaf": [5, 10, 20, 30],
+        "model__class_weight": [None, "balanced"],
     }
 
-    cv_strategy = StratifiedKFold(n_splits=cv, shuffle=True, random_state=random_state)
     grid_search = GridSearchCV(
-        pipeline,
+        classifier,
         param_grid=param_grid,
-        cv=cv_strategy,
+        cv=5,
         scoring="f1_macro",
+        # n_jobs=-1 can fail in restricted execution environments because joblib
+        # tries to create multiple worker processes. n_jobs=1 is slower but stable.
         n_jobs=1,
-        return_train_score=False,
     )
+    # GridSearchCV compares all parameter combinations using 5-fold CV.
+    # f1_macro is used because it averages F1 across classes and rewards balanced performance.
     grid_search.fit(X_train, y_train)
 
     best_model = grid_search.best_estimator_
     y_pred = best_model.predict(X_test)
 
+    # Store the required k-fold cross-validation result separately.
+    # The selected best model is evaluated again on the training set with 5-fold accuracy.
+    cv_scores = cross_val_score(
+        best_model,
+        X_train,
+        y_train,
+        cv=5,
+        scoring="accuracy",
+    )
+
+    report = classification_report(y_test, y_pred, output_dict=True, zero_division=0)
+    report_df = pd.DataFrame(report).transpose()
+    report_df.to_csv(METRIC_DIR / "classification_report.csv")
+
     metrics = {
-        "accuracy": accuracy_score(y_test, y_pred),
-        "precision_macro": precision_score(y_test, y_pred, average="macro", zero_division=0),
-        "recall_macro": recall_score(y_test, y_pred, average="macro", zero_division=0),
-        "f1_macro": f1_score(y_test, y_pred, average="macro", zero_division=0),
-    }
-    report_dict = classification_report(y_test, y_pred, labels=[0, 1], zero_division=0, output_dict=True)
-
-    # Fix:
-    # By default, confusion_matrix only includes classes that actually appear in y_test/y_pred.
-    # With a chronological split, the test period may contain only one class.
-    # Then confusion_matrix returns a 1x1 matrix, while the fixed row/column labels below expect 2x2.
-    # labels=[0, 1] forces a stable 2x2 confusion matrix even if one class is absent in the test set.
-    confusion_df = pd.DataFrame(
-        confusion_matrix(y_test, y_pred, labels=[0, 1]),
-        index=["actual_0", "actual_1"],
-        columns=["pred_0", "pred_1"],
-    )
-    cv_results_df = pd.DataFrame(grid_search.cv_results_).sort_values("rank_test_score")
-
-    pd.DataFrame([metrics]).to_csv(out / "classification_test_metrics.csv", index=False, encoding="utf-8-sig")
-    pd.DataFrame(report_dict).T.to_csv(out / "classification_report.csv", encoding="utf-8-sig")
-    confusion_df.to_csv(out / "classification_confusion_matrix.csv", encoding="utf-8-sig")
-    cv_results_df.to_csv(out / "classification_gridsearch_results.csv", index=False, encoding="utf-8-sig")
-
-    predictions_df = pd.DataFrame(
-        {
-            "Actual_Next_Day_Fuel_Rise": y_test.values,
-            "Predicted_Next_Day_Fuel_Rise": y_pred,
-        },
-        index=y_test.index,
-    )
-    predictions_df.to_csv(out / "classification_predictions.csv", encoding="utf-8-sig")
-
-    feature_importance_df = extract_tree_feature_importance(best_model)
-    feature_importance_df.to_csv(out / "classification_feature_importance.csv", index=False, encoding="utf-8-sig")
-
-    if not feature_importance_df.empty:
-        top10 = feature_importance_df.head(10)
-        plt.figure(figsize=(10, 6))
-        plt.barh(top10["feature"], top10["importance"])
-        plt.gca().invert_yaxis()
-        plt.title("Top 10 Feature Importances - Decision Tree")
-        plt.xlabel("Importance")
-        plt.tight_layout()
-        plt.savefig(out / "classification_feature_importance_top10.png", dpi=300)
-        plt.close()
-
-    try:
-        tree_model = best_model.named_steps["classifier"]
-        feature_names = best_model.named_steps["preprocess"].get_feature_names_out()
-        plt.figure(figsize=(30, 15), dpi=150)
-        plot_tree(
-            tree_model,
-            feature_names=list(feature_names),
-            class_names=["No Rise", "Rise"],
-            filled=True,
-            rounded=True,
-            fontsize=6,
-            max_depth=5,
-            impurity=False,
-        )
-        plt.title("Decision Tree Structure")
-        plt.tight_layout()
-        plt.savefig(out / "classification_decision_tree.png", dpi=300)
-        plt.close()
-    except Exception:
-        pass
-
-    return {
-        "best_model": best_model,
         "best_params": grid_search.best_params_,
-        "metrics": metrics,
-        "classification_report": report_dict,
-        "confusion_matrix": confusion_df,
-        "feature_importance": feature_importance_df,
+        "test_accuracy": float(accuracy_score(y_test, y_pred)),
+        "cv_accuracy_scores": [float(score) for score in cv_scores],
+        "cv_accuracy_mean": float(np.mean(cv_scores)),
     }
+    (METRIC_DIR / "classification_metrics.json").write_text(
+        json.dumps(metrics, indent=2),
+        encoding="utf-8",
+    )
+
+    ConfusionMatrixDisplay.from_predictions(y_test, y_pred, xticks_rotation=30)
+    plt.title("Decision Tree Confusion Matrix")
+    plt.tight_layout()
+    plt.savefig(FIGURE_DIR / "classification_confusion_matrix.png", dpi=150)
+    plt.close()
+
+    fitted_preprocessor = best_model.named_steps["preprocessor"]
+    fitted_tree = best_model.named_steps["model"]
+    feature_names = get_feature_names(fitted_preprocessor, numeric_cols, categorical_cols)
+
+    importance_df = pd.DataFrame(
+        {
+            "Feature": feature_names,
+            "Importance": fitted_tree.feature_importances_,
+        }
+    ).sort_values("Importance", ascending=False)
+    importance_df.to_csv(METRIC_DIR / "classification_feature_importance.csv", index=False)
+
+    plt.figure(figsize=(10, 6))
+    top10 = importance_df.head(10).iloc[::-1]
+    plt.barh(top10["Feature"], top10["Importance"])
+    plt.title("Top 10 Decision Tree Feature Importances")
+    plt.xlabel("Importance")
+    plt.tight_layout()
+    plt.savefig(FIGURE_DIR / "classification_feature_importance.png", dpi=150)
+    plt.close()
+
+    plt.figure(figsize=(30, 15), dpi=120)
+    plot_tree(
+        fitted_tree,
+        feature_names=feature_names,
+        class_names=[str(value) for value in fitted_tree.classes_],
+        filled=True,
+        rounded=True,
+        fontsize=6,
+        max_depth=4,
+        impurity=False,
+    )
+    plt.title("Decision Tree Structure")
+    plt.tight_layout()
+    plt.savefig(FIGURE_DIR / "classification_decision_tree_structure.png", dpi=150)
+    plt.close()
+
+    print(f"[CLASSIFICATION] Test accuracy: {metrics['test_accuracy']:.4f}")
+    print(f"[CLASSIFICATION] 5-fold CV mean accuracy: {metrics['cv_accuracy_mean']:.4f}")
+    return metrics
 
 
-def extract_tree_feature_importance(model: Pipeline) -> pd.DataFrame:
-    """Extract Decision Tree feature importance with post-preprocessing feature names."""
-    try:
-        preprocessor = model.named_steps["preprocess"]
-        classifier = model.named_steps["classifier"]
-        feature_names = preprocessor.get_feature_names_out()
-        return pd.DataFrame(
-            {
-                "feature": feature_names,
-                "importance": classifier.feature_importances_,
-            }
-        ).sort_values("importance", ascending=False)
-    except Exception:
-        return pd.DataFrame(columns=["feature", "importance"])
+def run_regression(cleaned_df):
+    """Predict the continuous Fuel_Price_Change_Percent value."""
+    print("[REGRESSION] Training Ridge regression model...")
 
+    # The regression target is Fuel_Price_Change_Percent.
+    # This reflects the corrected Role 4 regression file, where the target was changed
+    # from Fuel_Price_Local to Fuel_Price_Change_Percent.
+    # The 999.0 dirty values were already converted to NaN in clean_dirty_values().
+    model_df = cleaned_df[cleaned_df["Fuel_Price_Change_Percent"].notna()].copy()
 
-def evaluate_regression(y_true: pd.Series, y_pred: np.ndarray) -> Dict[str, float]:
-    """Calculate MAE, MSE, RMSE, and R2 for regression evaluation."""
-    mse = mean_squared_error(y_true, y_pred)
-    return {
-        "MAE": mean_absolute_error(y_true, y_pred),
-        "MSE": mse,
-        "RMSE": float(np.sqrt(mse)),
-        "R2": r2_score(y_true, y_pred),
-    }
+    X = make_feature_matrix(model_df)
+    y = model_df["Fuel_Price_Change_Percent"]
 
+    preprocessor, numeric_cols, categorical_cols = build_preprocessor(X)
 
-def run_regression(
-    X: pd.DataFrame,
-    y: pd.Series,
-    numeric_cols: List[str],
-    categorical_cols: List[str],
-    output_dir: str | Path,
-    cv: int = 5,
-    test_size: float = 0.2,
-    random_state: int = 42,
-) -> Dict[str, Any]:
-    """Run multiple linear regression, revised to predict next-day fuel price change amount."""
-    out = Path(output_dir)
-    out.mkdir(parents=True, exist_ok=True)
-
-    X_train, X_test, y_train, y_test = random_train_test_split(
+    # Keep shuffle=True for consistency with the requested Role 4 integration rule.
+    X_train, X_test, y_train, y_test = train_test_split(
         X,
         y,
-        test_size=test_size,
-        random_state=random_state,
-        stratify=None,
+        test_size=0.2,
+        shuffle=True,
+        random_state=42,
     )
-    X_train = X_train.drop(columns=["Date"], errors="ignore")
-    X_test = X_test.drop(columns=["Date"], errors="ignore")
-    categorical_cols = [c for c in categorical_cols if c != "Date"]
 
-    scoring = {
-        "MAE": "neg_mean_absolute_error",
-        "RMSE": "neg_root_mean_squared_error",
-        "R2": "r2",
+    regression_model = Pipeline(
+        steps=[
+            # As in classification, preprocessing and modeling are combined in one Pipeline
+            # so the fit/transform order remains safe after the train/test split.
+            ("preprocessor", preprocessor),
+            ("model", Ridge(alpha=1.0)),
+        ]
+    )
+    regression_model.fit(X_train, y_train)
+    y_pred = regression_model.predict(X_test)
+
+    # MSE: average squared prediction error.
+    # RMSE: square root of MSE; easier to interpret because it has the target's unit.
+    # R2: proportion of target variance explained by the model.
+    mse = mean_squared_error(y_test, y_pred)
+    rmse = float(np.sqrt(mse))
+    r2 = r2_score(y_test, y_pred)
+
+    metrics = {
+        "model": "Ridge(alpha=1.0)",
+        "target": "Fuel_Price_Change_Percent",
+        "test_mse": float(mse),
+        "test_rmse": rmse,
+        "test_r2": float(r2),
     }
-    kfold = KFold(n_splits=cv, shuffle=True, random_state=random_state)
-
-    result_rows = []
-    fitted_entries = []
-    for imputer_strategy in ["median", "mean"]:
-        for scaler_name in ["robust"]:
-            preprocessor = build_preprocessor(numeric_cols, categorical_cols, scaler_name=scaler_name, imputer_strategy=imputer_strategy)
-            model = Pipeline(
-                steps=[
-                    ("preprocess", preprocessor),
-                    ("regressor", LinearRegression()),
-                ]
-            )
-
-            cv_result = cross_validate(model, X_train, y_train, cv=kfold, scoring=scoring, n_jobs=1)
-            model.fit(X_train, y_train)
-            y_pred = model.predict(X_test)
-            test_metrics = evaluate_regression(y_test, y_pred)
-
-            row = {
-                "model_name": "Multiple Linear Regression",
-                "imputer_strategy": imputer_strategy,
-                "scaler_name": scaler_name,
-                "CV_MAE": -cv_result["test_MAE"].mean(),
-                "CV_RMSE": -cv_result["test_RMSE"].mean(),
-                "CV_R2": cv_result["test_R2"].mean(),
-                "Test_MAE": test_metrics["MAE"],
-                "Test_MSE": test_metrics["MSE"],
-                "Test_RMSE": test_metrics["RMSE"],
-                "Test_R2": test_metrics["R2"],
-            }
-            result_rows.append(row)
-            fitted_entries.append({"row": row, "model": model, "y_pred": y_pred})
-
-    results_df = pd.DataFrame(result_rows).sort_values(["CV_RMSE", "Test_RMSE"]).reset_index(drop=True)
-    best_params = results_df.iloc[0].to_dict()
-    best_entry = next(
-        entry
-        for entry in fitted_entries
-        if entry["row"]["imputer_strategy"] == best_params["imputer_strategy"]
-        and entry["row"]["scaler_name"] == best_params["scaler_name"]
+    (METRIC_DIR / "regression_metrics.json").write_text(
+        json.dumps(metrics, indent=2),
+        encoding="utf-8",
     )
-    best_model = best_entry["model"]
-    y_pred = best_entry["y_pred"]
-    final_metrics = evaluate_regression(y_test, y_pred)
 
-    results_df.to_csv(out / "regression_model_results.csv", index=False, encoding="utf-8-sig")
-    results_df.head(5).to_csv(out / "regression_top5_results.csv", index=False, encoding="utf-8-sig")
-    pd.DataFrame([final_metrics]).to_csv(out / "regression_test_metrics.csv", index=False, encoding="utf-8-sig")
+    comparison = pd.DataFrame({"Actual": y_test.values, "Predicted": y_pred})
+    comparison.to_csv(METRIC_DIR / "regression_actual_vs_predicted.csv", index=False)
 
-    predictions_df = pd.DataFrame(
+    # Regression coefficients show how each feature is associated with target increase/decrease.
+    # Since features are Robust-scaled, coefficients should not be interpreted in raw units.
+    fitted_preprocessor = regression_model.named_steps["preprocessor"]
+    fitted_regressor = regression_model.named_steps["model"]
+    feature_names = get_feature_names(fitted_preprocessor, numeric_cols, categorical_cols)
+    coefficient_df = pd.DataFrame(
         {
-            "Actual_Next_Day_Fuel_Change_Amount": y_test.values,
-            "Predicted_Next_Day_Fuel_Change_Amount": y_pred,
-            "Residual": y_test.values - y_pred,
-        },
-        index=y_test.index,
-    )
-    predictions_df.to_csv(out / "regression_predictions.csv", encoding="utf-8-sig")
-
-    coefficients_df = extract_regression_coefficients(best_model)
-    coefficients_df.to_csv(out / "regression_coefficients_top30.csv", index=False, encoding="utf-8-sig")
+            "Feature": feature_names,
+            "Coefficient": fitted_regressor.coef_,
+        }
+    ).sort_values("Coefficient", ascending=False)
+    coefficient_df.to_csv(METRIC_DIR / "regression_coefficients.csv", index=False)
 
     plt.figure(figsize=(7, 6))
     plt.scatter(y_test, y_pred, alpha=0.7)
-    min_value = min(float(np.min(y_test)), float(np.min(y_pred)))
-    max_value = max(float(np.max(y_test)), float(np.max(y_pred)))
-    plt.plot([min_value, max_value], [min_value, max_value], linestyle="--", label="Perfect Prediction Line")
-    trend_coef = np.polyfit(y_test, y_pred, 1)
-    trend_line = np.poly1d(trend_coef)
-    x_line = np.linspace(float(np.min(y_test)), float(np.max(y_test)), 100)
-    plt.plot(x_line, trend_line(x_line), linewidth=2, label="Prediction Trend Line")
-    plt.title("Actual vs Predicted: Next-Day Fuel Change Amount")
-    plt.xlabel("Actual Change Amount")
-    plt.ylabel("Predicted Change Amount")
-    plt.grid(True)
-    plt.legend()
+    min_value = min(y_test.min(), y_pred.min())
+    max_value = max(y_test.max(), y_pred.max())
+    plt.plot([min_value, max_value], [min_value, max_value], linestyle="--")
+    plt.title("Actual vs Predicted Fuel Price Change Percent")
+    plt.xlabel("Actual Fuel_Price_Change_Percent")
+    plt.ylabel("Predicted Fuel_Price_Change_Percent")
+    plt.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.savefig(out / "regression_actual_vs_predicted.png", dpi=300)
+    plt.savefig(FIGURE_DIR / "regression_actual_vs_predicted.png", dpi=150)
     plt.close()
 
-    return {
-        "best_model": best_model,
-        "best_params": best_params,
-        "metrics": final_metrics,
-        "all_results": results_df,
-        "top5_results": results_df.head(5),
-        "coefficients": coefficients_df,
-    }
+    print(f"[REGRESSION] RMSE: {rmse:.4f}")
+    print(f"[REGRESSION] R2: {r2:.4f}")
+    return metrics
 
 
-def extract_regression_coefficients(model: Pipeline, top_n: int = 30) -> pd.DataFrame:
-    """Extract linear regression coefficients with post-preprocessing feature names."""
-    try:
-        feature_names = model.named_steps["preprocess"].get_feature_names_out()
-        coefficients = model.named_steps["regressor"].coef_
-        coef_df = pd.DataFrame(
-            {
-                "feature": feature_names,
-                "coefficient": coefficients,
-                "abs_coefficient": np.abs(coefficients),
-            }
-        ).sort_values("abs_coefficient", ascending=False)
-        return coef_df.head(top_n)
-    except Exception:
-        return pd.DataFrame(columns=["feature", "coefficient", "abs_coefficient"])
+def run_clustering(cleaned_df):
+    """Run K-Means as an additional pattern-discovery analysis."""
+    print("[CLUSTERING] Training K-Means clustering models...")
 
-
-def run_clustering(
-    df: pd.DataFrame,
-    output_dir: str | Path,
-    random_state: int = 42,
-) -> Dict[str, Any]:
-    """
-    Run K-Means as a supporting analysis based on the role 4 clustering file.
-
-    The submitted file hardcoded best_k=8.
-    This integrated version selects best_k using silhouette score.
-    """
-    out = Path(output_dir)
-    out.mkdir(parents=True, exist_ok=True)
-
+    # [Role 4 K-Means] Use key variables that describe crisis-related market conditions.
+    # Brent: international oil benchmark
+    # Fuel_Price_Local: local country-level fuel price
+    # Fuel_Price_Change_Percent: fuel price movement
+    # Crisis_Intensity_Index: geopolitical crisis intensity
+    # USD_Exchange_Rate: exchange-rate pressure
+    # Inflation_Rate_Percent: macroeconomic price pressure
     clustering_cols = [
         "Brent_Crude_USD_per_barrel",
         "Fuel_Price_Local",
@@ -703,216 +602,145 @@ def run_clustering(
         "USD_Exchange_Rate",
         "Inflation_Rate_Percent",
     ]
-    available_cols = [col for col in clustering_cols if col in df.columns]
-    X = df[available_cols].select_dtypes(include=[np.number]).dropna()
 
-    # K-Means is distance-based, so scaling is required.
-    # Use RobustScaler here as well to match the role 3 preprocessing decision.
-    scaler = RobustScaler()
-    X_scaled = scaler.fit_transform(X)
+    cluster_df = cleaned_df[["Date", "Country"] + clustering_cols].copy()
+    X = cluster_df[clustering_cols]
+
+    # K-Means is distance-based, so scaling matters strongly.
+    # If variables remain in different units, large-scale variables dominate distance calculation.
+    # RobustScaler is used here as the only scaler, following the requested rule.
+    cluster_preprocessor = Pipeline(
+        steps=[
+            ("imputer", SimpleImputer(strategy="median")),
+            ("scaler", RobustScaler()),
+        ]
+    )
+    X_scaled = cluster_preprocessor.fit_transform(X)
 
     k_results = []
-    max_k = min(12, max(3, len(available_cols) * 2))
+    max_k = min(11, len(cluster_df) - 1)
+    # Compare multiple k values.
+    # Inertia measures within-cluster compactness, so lower values are better.
+    # Silhouette score measures both compactness and separation; values closer to 1 are better.
     for k in range(2, max_k + 1):
-        kmeans = KMeans(n_clusters=k, random_state=random_state, n_init=10)
-        labels = kmeans.fit_predict(X_scaled)
+        model = KMeans(n_clusters=k, random_state=42, n_init=10)
+        labels = model.fit_predict(X_scaled)
         k_results.append(
             {
                 "n_clusters": k,
-                "inertia": kmeans.inertia_,
-                "silhouette_score": silhouette_score(X_scaled, labels),
+                "inertia": float(model.inertia_),
+                "silhouette_score": float(silhouette_score(X_scaled, labels)),
             }
         )
 
-    k_results_df = pd.DataFrame(k_results).sort_values("silhouette_score", ascending=False)
-    best_k = int(k_results_df.iloc[0]["n_clusters"])
-    best_kmeans = KMeans(n_clusters=best_k, random_state=random_state, n_init=10)
-    cluster_labels = best_kmeans.fit_predict(X_scaled)
+    k_results_df = pd.DataFrame(k_results)
+    k_results_df.to_csv(METRIC_DIR / "clustering_k_evaluation.csv", index=False)
+    # The original team code fixed best_k = 8.
+    # The final integrated version selects the k with the best silhouette score automatically.
+    best_k = int(k_results_df.loc[k_results_df["silhouette_score"].idxmax(), "n_clusters"])
 
-    clustered_df = df.loc[X.index].copy()
-    clustered_df["Cluster"] = cluster_labels
-    cluster_centers_df = pd.DataFrame(
-        scaler.inverse_transform(best_kmeans.cluster_centers_),
-        columns=available_cols,
-    )
+    best_kmeans = KMeans(n_clusters=best_k, random_state=42, n_init=10)
+    cluster_df["Cluster"] = best_kmeans.fit_predict(X_scaled)
 
-    k_results_df.to_csv(out / "kmeans_k_evaluation.csv", index=False, encoding="utf-8-sig")
-    clustered_df.to_csv(out / "kmeans_clustered_data.csv", index=False, encoding="utf-8-sig")
-    cluster_centers_df.to_csv(out / "kmeans_cluster_centers_original_scale.csv", index=False, encoding="utf-8-sig")
+    cluster_counts = cluster_df["Cluster"].value_counts().sort_index()
+    cluster_counts.rename("count").to_csv(METRIC_DIR / "clustering_counts.csv")
+
+    cluster_centers = pd.DataFrame(best_kmeans.cluster_centers_, columns=clustering_cols)
+    cluster_centers.to_csv(METRIC_DIR / "clustering_centers_scaled.csv", index=False)
 
     plt.figure(figsize=(8, 5))
-    plt.plot(k_results_df.sort_values("n_clusters")["n_clusters"], k_results_df.sort_values("n_clusters")["inertia"], marker="o")
-    plt.title("Elbow Method for K-Means")
+    plt.plot(k_results_df["n_clusters"], k_results_df["inertia"], marker="o")
+    plt.title("K-Means Elbow Method")
     plt.xlabel("Number of Clusters")
     plt.ylabel("Inertia")
-    plt.grid(True)
+    plt.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.savefig(out / "kmeans_elbow_method.png", dpi=300)
+    plt.savefig(FIGURE_DIR / "clustering_elbow.png", dpi=150)
     plt.close()
 
     plt.figure(figsize=(8, 5))
-    plt.plot(
-        k_results_df.sort_values("n_clusters")["n_clusters"],
-        k_results_df.sort_values("n_clusters")["silhouette_score"],
-        marker="o",
-    )
-    plt.title("Silhouette Score by Number of Clusters")
+    plt.plot(k_results_df["n_clusters"], k_results_df["silhouette_score"], marker="o")
+    plt.title("K-Means Silhouette Score")
     plt.xlabel("Number of Clusters")
     plt.ylabel("Silhouette Score")
-    plt.grid(True)
+    plt.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.savefig(out / "kmeans_silhouette_scores.png", dpi=300)
+    plt.savefig(FIGURE_DIR / "clustering_silhouette.png", dpi=150)
     plt.close()
 
-    pca = PCA(n_components=2)
+    # PCA is used only for presentation-friendly 2D visualization.
+    # K-Means itself is fitted in the original scaled feature space.
+    pca = PCA(n_components=2, random_state=42)
     X_pca = pca.fit_transform(X_scaled)
-    centers_pca = pca.transform(best_kmeans.cluster_centers_)
     plt.figure(figsize=(8, 6))
-    plt.scatter(X_pca[:, 0], X_pca[:, 1], c=cluster_labels, alpha=0.7)
-    plt.scatter(
-        centers_pca[:, 0],
-        centers_pca[:, 1],
-        c=np.arange(best_k),
-        cmap="viridis",
-        marker=".",
-        s=300,
-        edgecolors="black",
-        linewidths=1.5,
-    )
-    plt.title(f"K-Means Clustering with PCA 2D Visualization, k={best_k}")
+    plt.scatter(X_pca[:, 0], X_pca[:, 1], c=cluster_df["Cluster"], alpha=0.7)
+    plt.title(f"K-Means Clustering PCA View (k={best_k})")
     plt.xlabel("PCA Component 1")
     plt.ylabel("PCA Component 2")
-    plt.grid(True)
+    plt.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.savefig(out / "kmeans_pca_visualization.png", dpi=300)
+    plt.savefig(FIGURE_DIR / "clustering_pca.png", dpi=150)
     plt.close()
 
-    return {
+    metrics = {
         "best_k": best_k,
-        "k_results": k_results_df,
-        "cluster_centers": cluster_centers_df,
-        "clustered_data": clustered_df,
+        "best_silhouette_score": float(
+            k_results_df.loc[k_results_df["n_clusters"] == best_k, "silhouette_score"].iloc[0]
+        ),
     }
+    (METRIC_DIR / "clustering_metrics.json").write_text(
+        json.dumps(metrics, indent=2),
+        encoding="utf-8",
+    )
+
+    print(f"[CLUSTERING] Best k: {best_k}")
+    print(f"[CLUSTERING] Best silhouette score: {metrics['best_silhouette_score']:.4f}")
+    return metrics
 
 
-def save_summary_json(summary: Dict[str, Any], output_path: str | Path) -> None:
-    """Save the key final results as a JSON summary."""
-    serializable = {}
-    for key, value in summary.items():
-        if isinstance(value, pd.DataFrame):
-            serializable[key] = value.to_dict(orient="records")
-        elif isinstance(value, (np.integer, np.floating)):
-            serializable[key] = value.item()
-        elif isinstance(value, dict):
-            serializable[key] = {
-                k: (v.item() if isinstance(v, (np.integer, np.floating)) else v)
-                for k, v in value.items()
-                if not hasattr(v, "predict")
-            }
-        else:
-            serializable[key] = value
-
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(serializable, f, ensure_ascii=False, indent=2)
+def validate_outputs():
+    """Verify that the required output files were created."""
+    required_files = [
+        METRIC_DIR / "classification_metrics.json",
+        METRIC_DIR / "classification_report.csv",
+        METRIC_DIR / "regression_metrics.json",
+        METRIC_DIR / "clustering_metrics.json",
+        FIGURE_DIR / "classification_confusion_matrix.png",
+        FIGURE_DIR / "regression_actual_vs_predicted.png",
+        FIGURE_DIR / "clustering_pca.png",
+    ]
+    missing_files = [path for path in required_files if not path.exists()]
+    if missing_files:
+        missing_text = "\n".join(str(path) for path in missing_files)
+        raise RuntimeError(f"Some required output files were not created:\n{missing_text}")
+    print("[VALIDATION] Required output files were created successfully.")
 
 
-def run_integrated_pipeline(
-    csv_path: str | Path = DEFAULT_CSV_PATH,
-    output_dir: str | Path = "term_project_integrated_outputs_en",
-    test_size: float = 0.2,
-    cv: int = 5,
-    random_state: int = 42,
-    run_cluster: bool = True,
-) -> Dict[str, Any]:
-    """
-    Final top-level integrated function.
+def main():
+    prepare_output_dirs()
 
-    It follows the end-to-end project flow:
-    EDA -> preprocessing -> classification -> regression -> optional clustering -> output saving.
-    """
-    dirs = ensure_output_dirs(output_dir)
-
-    raw_df = load_dataset(csv_path)
-    eda_results = run_eda(raw_df, dirs["eda"])
-
+    raw_df = load_data()
     cleaned_df = clean_dirty_values(raw_df)
-    filled_df = fill_time_series_missing_values(cleaned_df)
-    modeling_df = add_next_day_targets(filled_df)
-    modeling_df.to_csv(dirs["base"] / "preprocessed_modeling_dataset.csv", index=False, encoding="utf-8-sig")
 
-    X, y_classification, y_regression, numeric_cols, categorical_cols = prepare_modeling_data(modeling_df)
+    run_eda(raw_df, cleaned_df)
+    classification_metrics = run_classification(cleaned_df)
+    regression_metrics = run_regression(cleaned_df)
+    clustering_metrics = run_clustering(cleaned_df)
 
-    classification_results = run_classification(
-        X,
-        y_classification,
-        numeric_cols,
-        categorical_cols,
-        dirs["classification"],
-        cv=cv,
-        test_size=test_size,
-        random_state=random_state,
-    )
-    regression_results = run_regression(
-        X,
-        y_regression,
-        numeric_cols,
-        categorical_cols,
-        dirs["regression"],
-        cv=cv,
-        test_size=test_size,
-        random_state=random_state,
-    )
-    clustering_results = run_clustering(modeling_df, dirs["clustering"], random_state=random_state) if run_cluster else None
+    validate_outputs()
 
     summary = {
-        "team_code_references": TEAM_CODE_REFERENCES,
-        "raw_shape": {"rows": raw_df.shape[0], "columns": raw_df.shape[1]},
-        "modeling_shape": {"rows": modeling_df.shape[0], "columns": modeling_df.shape[1]},
-        "classification_best_params": classification_results["best_params"],
-        "classification_metrics": classification_results["metrics"],
-        "regression_best_params": regression_results["best_params"],
-        "regression_metrics": regression_results["metrics"],
-        "clustering_best_k": clustering_results["best_k"] if clustering_results else None,
+        "classification": classification_metrics,
+        "regression": regression_metrics,
+        "clustering": clustering_metrics,
     }
-    save_summary_json(summary, dirs["base"] / "integrated_summary.json")
-
-    return {
-        "summary": summary,
-        "eda": eda_results,
-        "classification": classification_results,
-        "regression": regression_results,
-        "clustering": clustering_results,
-        "output_dir": str(dirs["base"]),
-    }
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run Team 3 integrated data science term project pipeline.")
-    parser.add_argument("--csv-path", default=DEFAULT_CSV_PATH, help="Path to Iran_War_Global_Fuel_Crisis_Dirty_Dataset.csv")
-    parser.add_argument("--output-dir", default="term_project_integrated_outputs_en", help="Directory to save outputs")
-    parser.add_argument("--test-size", type=float, default=0.2, help="Test data ratio")
-    parser.add_argument("--cv", type=int, default=5, help="Number of cross-validation folds")
-    parser.add_argument("--random-state", type=int, default=42, help="Random seed")
-    parser.add_argument("--skip-cluster", action="store_true", help="Skip K-Means clustering analysis")
-    return parser.parse_args()
+    (OUTPUT_DIR / "pipeline_summary.json").write_text(
+        json.dumps(summary, indent=2),
+        encoding="utf-8",
+    )
+    print("[DONE] Integrated pipeline finished successfully.")
+    print(f"[DONE] Outputs saved to: {OUTPUT_DIR}")
 
 
 if __name__ == "__main__":
-    args = parse_args()
-    result = run_integrated_pipeline(
-        csv_path=args.csv_path,
-        output_dir=args.output_dir,
-        test_size=args.test_size,
-        cv=args.cv,
-        random_state=args.random_state,
-        run_cluster=not args.skip_cluster,
-    )
-
-    print("Integrated pipeline completed.")
-    print(f"Output directory: {result['output_dir']}")
-    print("\nClassification metrics:")
-    print(result["summary"]["classification_metrics"])
-    print("\nRegression metrics:")
-    print(result["summary"]["regression_metrics"])
-    if result["summary"]["clustering_best_k"] is not None:
-        print(f"\nBest K for clustering: {result['summary']['clustering_best_k']}")
+    main()
