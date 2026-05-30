@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 
 from sklearn.cluster import KMeans
@@ -52,7 +53,7 @@ for k in range(2, max_k):
 
     k_results.append({
         "n_clusters": k,
-        "inertia": inertia,
+        "inertia": inertia, 
         "silhouette_score": silhouette
     })
 
@@ -65,7 +66,8 @@ k_results_sorted = k_results_df.sort_values(
 print(k_results_sorted)
 
 # Silhouette Score가 가장 높은 k 선택
-best_k = int(k_results_df.loc[k_results_df["silhouette_score"].idxmax(), "n_clusters"])
+best_k = 8
+#best_k = int(k_results_df.loc[k_results_df["silhouette_score"].idxmax(), "n_clusters"])
 print("\nBest number of clusters:", best_k)
 
 # 3. Best K-Means Model 학습
@@ -144,10 +146,11 @@ plt.tight_layout()
 plt.show()
 
 ########################################################## 이 밑으로는 추가적인 결과를 원하시면, 주석을 풀고 체크하시면 됩니다.
-'''
+
 # 6. PCA를 이용한 2D 시각화
 pca = PCA(n_components=2)
 X_pca = pca.fit_transform(X_clean)
+centers_pca = pca.transform(best_kmeans.cluster_centers_)
 
 plt.figure(figsize=(8, 6))
 plt.scatter(
@@ -157,12 +160,25 @@ plt.scatter(
     alpha=0.7
 )
 
+plt.scatter(
+    centers_pca[:, 0],
+    centers_pca[:, 1],
+    c=np.arange(best_k),
+    cmap="viridis",
+    vmin=0,
+    vmax=best_k - 1,
+    marker=".",
+    s=300,
+    edgecolors="black",
+    linewidths=1.5,
+    label="Cluster Centers"
+)
+
 plt.title(f"K-Means Clustering Result with PCA 2D Visualization, k={best_k}")
 plt.xlabel("PCA Component 1")
 plt.ylabel("PCA Component 2")
 plt.grid(True)
 plt.show()
-'''
 ######################################################
 '''
 1. Cluster 0: Brent 높음, Fuel Price 높음, Crisis 높음, USD 높음, Inflation 약간 낮음

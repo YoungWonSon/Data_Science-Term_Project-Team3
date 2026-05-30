@@ -51,7 +51,9 @@ X_train, X_test, y_train, y_test = train_test_split(
     X,
     y,
     test_size=0.2,
-    shuffle=False
+    shuffle=True,
+    stratify=y,
+    random_state=42
 )
 
 # 6. 결측치 처리, imputer는 train data에만 fit해야 함
@@ -63,9 +65,9 @@ X_test_imputed = imputer.transform(X_test)
 # 7. Decision Tree 모델 + Grid Search
 param_grid = {
     "criterion": ["gini", "entropy"],
-    "max_depth": [3, 5, 8, 10, None],
-    "min_samples_split": [2, 5, 10, 20],
-    "min_samples_leaf": [1, 5, 10, 20],
+    "max_depth": [3, 4, 5, 6, None],
+    "min_samples_split": [ 5, 10, 20, 30],
+    "min_samples_leaf": [ 5, 10, 20, 30],
     "class_weight": [None, "balanced"]
 }
 
@@ -80,6 +82,7 @@ grid_search = GridSearchCV(
 grid_search.fit(X_train_imputed, y_train)
 dt_model = grid_search.best_estimator_
 print("Best Parameters:", grid_search.best_params_)
+print("Tree Depth:", dt_model.get_depth())
 
 y_pred = dt_model.predict(X_test_imputed)
 print("Accuracy:", accuracy_score(y_test, y_pred))
@@ -100,7 +103,7 @@ print("cv_scores mean:{}".format(np.mean(cv_scores)))
 feature_names = X.columns
 
 # Tree Structure를 그림으로 출력
-plt.figure(figsize=(40, 20), dpi=150)
+plt.figure(figsize=(30, 15), dpi=150)
 
 plot_tree(
     dt_model,
@@ -109,14 +112,11 @@ plot_tree(
     filled=True,
     rounded=True,
     fontsize=6,
-    max_depth=4,
+    max_depth=5,
     impurity=False
 )
 plt.title("Decision Tree Structure")
 plt.show()
-
-'''
-# 이 아래부터는 텀 프로젝트 조건을 제외한, extra 결과 시각화 입니다.
 
 # 요소 중요도 확인 및 시각화
 # 10. Feature Importance 확인
@@ -139,6 +139,7 @@ plt.xlabel("Importance")
 plt.ylabel("Feature")
 plt.show()
 
+'''
 # 12. Feature별 threshold 묶어서 출력
 tree = dt_model.tree_
 feature_thresholds = {}
