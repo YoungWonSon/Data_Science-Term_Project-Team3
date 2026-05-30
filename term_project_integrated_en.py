@@ -1,25 +1,25 @@
 """
-Team 3 Data Science Term Project - Integrated Pipeline (Korean comments)
+Team 3 Data Science Term Project - Integrated Pipeline (English comments)
 
-기존 팀원 코드 기반 통합본:
-- Seo_Jangwon_EDA.py: 데이터 구조, 결측치, 오류성 이상치, 분포, 상관관계 분석
-- Jo_Minseo_*.py: 결측치 처리, 오류성 이상치 처리, one-hot encoding, scaling
-- Classification_Decison_Tree.py: Decision Tree 분류, GridSearchCV, k-fold CV, feature importance
-- KIm_Dana_Multi-Linear-Regression.py: 다중 선형 회귀, MSE/RMSE/R2, 실제값-예측값 비교
-- KIm_Dana_K-Mean-Clustering.py: K-Means, silhouette score, elbow/PCA 시각화
-- Kwon_Keonho_Regression_OpenSource.py: top-level 함수 구조와 결과 저장 방식
+This file is the English-comment version of the final integrated code.
+It is based on the team's submitted files:
+- Seo_Jangwon_EDA.py: data structure, missing values, dirty values, distribution, correlation
+- Jo_Minseo_*.py: missing value handling, dirty value replacement, one-hot encoding, scaling
+- Classification_Decison_Tree.py: Decision Tree classification, GridSearchCV, k-fold CV
+- KIm_Dana_Multi-Linear-Regression.py: multiple linear regression and regression metrics
+- KIm_Dana_K-Mean-Clustering.py: K-Means, silhouette score, elbow method, PCA visualization
+- Kwon_Keonho_Regression_OpenSource.py: reusable top-level pipeline and output saving style
 
-최종 목표:
-1. Classification: 다음날 현지 연료 가격이 상승할지 여부를 이진 분류
-2. Regression: 다음날 현지 연료 가격 변동폭을 예측
-3. Clustering: 위기/유가/환율/인플레이션 기반 시장 패턴 보조 분석
+Final objectives:
+1. Classification: predict whether local fuel price rises on the next day.
+2. Regression: predict the next-day local fuel price change amount.
+3. Clustering: perform supporting market-pattern analysis using fuel, crisis, FX, and inflation features.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import warnings
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -79,7 +79,7 @@ TEAM_CODE_REFERENCES = {
 
 
 def make_one_hot_encoder() -> OneHotEncoder:
-    """scikit-learn 버전에 따라 sparse_output 인자가 없을 수 있어 호환 처리한다."""
+    """Create a OneHotEncoder that works with both newer and older scikit-learn versions."""
     try:
         return OneHotEncoder(handle_unknown="ignore", sparse_output=False)
     except TypeError:
@@ -87,7 +87,7 @@ def make_one_hot_encoder() -> OneHotEncoder:
 
 
 def ensure_output_dirs(output_dir: str | Path) -> Dict[str, Path]:
-    """EDA, model, clustering 결과를 저장할 폴더를 생성한다."""
+    """Create output folders for EDA, classification, regression, and clustering."""
     base = Path(output_dir)
     dirs = {
         "base": base,
@@ -102,7 +102,7 @@ def ensure_output_dirs(output_dir: str | Path) -> Dict[str, Path]:
 
 
 def load_dataset(csv_path: str | Path) -> pd.DataFrame:
-    """기존 팀원 코드처럼 read_csv로 원본 dirty dataset을 불러온다."""
+    """Load the original dirty CSV dataset using pandas, as in the submitted team code."""
     df = pd.read_csv(csv_path, encoding="utf-8")
     if "Date" not in df.columns or "Country" not in df.columns:
         raise ValueError("Dataset must contain 'Date' and 'Country' columns.")
@@ -111,10 +111,10 @@ def load_dataset(csv_path: str | Path) -> pd.DataFrame:
 
 def run_eda(df: pd.DataFrame, output_dir: str | Path) -> Dict[str, pd.DataFrame]:
     """
-    2번 역할 코드 기반 EDA.
+    Run EDA based on the role 2 code.
 
-    기존 코드는 print와 plt.show 중심이었으므로,
-    최종 제출용으로 표와 그래프를 파일로 저장하도록 수정했다.
+    The original file mostly printed results and displayed figures.
+    This integrated version saves tables and plots so they can be reused in the report and PPT.
     """
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -148,13 +148,13 @@ def run_eda(df: pd.DataFrame, output_dir: str | Path) -> Dict[str, pd.DataFrame]
     error_values_df.to_csv(out / "dirty_error_values.csv", index=False, encoding="utf-8-sig")
     corr_pairs.to_csv(out / "top_correlations.csv", index=False, encoding="utf-8-sig")
 
-    # 기존 EDA의 histogram 시각화
+    # Histogram visualization from the EDA file.
     df.hist(figsize=(16, 11))
     plt.tight_layout()
     plt.savefig(out / "numeric_histograms.png", dpi=300)
     plt.close()
 
-    # Fuel_Price_Change_Percent의 999 오류값은 제외하고 박스플롯을 그린다.
+    # Exclude the obvious 999 dirty value before drawing the fuel-change boxplot.
     if "Fuel_Price_Change_Percent" in df.columns:
         filtered_data = df[df["Fuel_Price_Change_Percent"] < 100]
         plt.figure(figsize=(8, 4))
@@ -173,7 +173,7 @@ def run_eda(df: pd.DataFrame, output_dir: str | Path) -> Dict[str, pd.DataFrame]
         plt.savefig(out / "fuel_price_change_boxplot.png", dpi=300)
         plt.close()
 
-    # 변수 간 상관관계 heatmap
+    # Correlation heatmap from the EDA file.
     plt.figure(figsize=(14, 10))
     sns.heatmap(corr_matrix, annot=True, cmap="coolwarm", fmt=".2f")
     plt.xticks(rotation=45, ha="right", fontsize=8)
@@ -183,7 +183,7 @@ def run_eda(df: pd.DataFrame, output_dir: str | Path) -> Dict[str, pd.DataFrame]
     plt.savefig(out / "correlation_heatmap.png", dpi=300)
     plt.close()
 
-    # 국가별 현지 연료 가격 분포. 국가별 통화 단위 차이가 커서 로그 스케일을 유지한다.
+    # Country-level local fuel price distribution. Log scale is kept because local currencies differ greatly.
     if {"Country", "Fuel_Price_Local"}.issubset(df.columns):
         plt.figure(figsize=(14, 7))
         sns.boxplot(
@@ -218,10 +218,10 @@ def run_eda(df: pd.DataFrame, output_dir: str | Path) -> Dict[str, pd.DataFrame]
 
 def clean_dirty_values(df: pd.DataFrame) -> pd.DataFrame:
     """
-    3번 역할의 Outlierreplace.py 기반 처리.
+    Replace obvious dirty values based on Jo_Minseo_Outlierreplace.py.
 
-    999.0과 -99.0은 실제 경제적 극단값이라기보다 입력 오류성 값으로 보고 NaN으로 변환한다.
-    IQR 기반 이상치는 위기 상황의 의미 있는 신호일 수 있으므로 일괄 삭제하지 않는다.
+    The project treats 999.0 and -99.0 as input/system errors, not meaningful crisis extremes.
+    General IQR outliers are not removed automatically because crisis-related extremes may be informative.
     """
     df = df.copy()
 
@@ -236,11 +236,11 @@ def clean_dirty_values(df: pd.DataFrame) -> pd.DataFrame:
 
 def fill_time_series_missing_values(df: pd.DataFrame) -> pd.DataFrame:
     """
-    3번 역할의 fillna.py 기반 결측치 처리.
+    Fill missing values based on Jo_Minseo_fillna.py.
 
-    원본 코드는 국가별 ffill 후 bfill을 사용했다.
-    최종 예측 통합본에서는 미래값 사용 위험을 줄이기 위해 ffill을 먼저 쓰고,
-    앞쪽 결측치는 국가별 중앙값과 전체 중앙값으로 보완한다.
+    The submitted code used country-level forward fill and backward fill.
+    To reduce future-information leakage in the final predictive pipeline,
+    this version uses forward fill first, then country median and global median fallbacks.
     """
     df = df.copy()
     df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
@@ -258,13 +258,13 @@ def fill_time_series_missing_values(df: pd.DataFrame) -> pd.DataFrame:
 
 def add_next_day_targets(df: pd.DataFrame) -> pd.DataFrame:
     """
-    제안서 목표에 맞게 다음날 target을 생성한다.
+    Create next-day targets that match the proposal.
 
     Classification target:
-        Next_Day_Fuel_Rise = 다음날 Fuel_Price_Change_Percent가 0보다 크면 1, 아니면 0
+        Next_Day_Fuel_Rise = 1 if next day's Fuel_Price_Change_Percent is positive, else 0
 
     Regression target:
-        Next_Day_Fuel_Change_Amount = 다음날 Fuel_Price_Local - 오늘 Fuel_Price_Local
+        Next_Day_Fuel_Change_Amount = next day's Fuel_Price_Local - today's Fuel_Price_Local
     """
     df = df.copy()
     df = df.sort_values(["Country", "Date"]).reset_index(drop=True)
@@ -283,10 +283,10 @@ def add_next_day_targets(df: pd.DataFrame) -> pd.DataFrame:
 
 def prepare_modeling_data(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series, pd.Series, List[str], List[str]]:
     """
-    모델링용 X, classification y, regression y를 만든다.
+    Build X, classification y, and regression y.
 
-    4번 코드의 Date_Ordinal 아이디어를 유지하되,
-    미래 target 컬럼은 feature에서 제외한다.
+    The Date_Ordinal idea from Kim_Dana_Standarization_Data.py is preserved,
+    while future target columns are excluded from features.
     """
     df = df.copy()
     df["Date_Ordinal"] = df["Date"].map(lambda x: x.toordinal() if pd.notna(x) else np.nan)
@@ -314,14 +314,15 @@ def build_preprocessor(
     imputer_strategy: str = "median",
 ) -> ColumnTransformer:
     """
-    3번의 인코딩/스케일링과 4번의 SimpleImputer 사용을 하나로 묶는다.
+    Combine imputation, encoding, and scaling in one sklearn preprocessor.
 
-    train 데이터에만 fit되고 test 데이터에는 transform만 되도록 Pipeline 내부에 넣는다.
+    Because this preprocessor is inside a Pipeline, it is fitted only on training data
+    and then applied to test data, reducing data leakage.
     """
-    # 3번 역할의 최종 전처리 방향을 반영해 RobustScaler만 사용한다.
-    # 기존 통합본에는 StandardScaler도 남아 있었지만,
-    # 이 데이터셋은 999/-99 같은 오류성 값과 위기 상황의 극단값이 섞여 있어
-    # 중앙값과 IQR 기반으로 스케일링하는 RobustScaler가 역할 설명과 더 잘 맞는다.
+    # The final preprocessing direction from role 3 uses RobustScaler only.
+    # The earlier integrated version still allowed StandardScaler, but this dataset contains
+    # both error-type dirty values and crisis-related extreme values, so median/IQR-based
+    # RobustScaler is more consistent with the team's preprocessing rationale.
     if scaler_name != "robust":
         raise ValueError("scaler_name must be 'robust' in the final integrated version.")
     scaler = RobustScaler()
@@ -354,10 +355,10 @@ def time_based_train_test_split(
     test_size: float = 0.2,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
     """
-    시계열 성격을 고려해 날짜 순서 기준으로 train/test를 나눈다.
+    Split train and test data by time order.
 
-    기존 4번 classification은 stratify random split을 사용했지만,
-    최종 next-day 예측에서는 미래 데이터가 train에 섞이지 않는 편이 더 안전하다.
+    The submitted classification code used a stratified random split.
+    For the final next-day prediction task, a chronological split is safer because future rows do not enter training.
     """
     ordered_index = X.sort_values(["Date", "Country"]).index
     split_point = int(len(ordered_index) * (1 - test_size))
@@ -377,20 +378,22 @@ def run_classification(
     test_size: float = 0.2,
     random_state: int = 42,
 ) -> Dict[str, Any]:
-    """4번 Decision Tree classification 코드를 next-day binary target에 맞게 수정한 모델링 함수."""
+    """Run Decision Tree classification using the role 4 model structure, revised for next-day binary prediction."""
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
     X_train, X_test, y_train, y_test = time_based_train_test_split(X, y, test_size=test_size)
-
-    # 날짜 컬럼은 Date_Ordinal로 이미 반영했으므로 원본 Date는 제거한다.
     X_train = X_train.drop(columns=["Date"], errors="ignore")
     X_test = X_test.drop(columns=["Date"], errors="ignore")
     categorical_cols = [c for c in categorical_cols if c != "Date"]
 
     preprocessor = build_preprocessor(numeric_cols, categorical_cols, scaler_name="robust", imputer_strategy="median")
-    classifier = DecisionTreeClassifier(random_state=random_state)
-    pipeline = Pipeline(steps=[("preprocess", preprocessor), ("classifier", classifier)])
+    pipeline = Pipeline(
+        steps=[
+            ("preprocess", preprocessor),
+            ("classifier", DecisionTreeClassifier(random_state=random_state)),
+        ]
+    )
 
     param_grid = {
         "classifier__criterion": ["gini", "entropy"],
@@ -422,13 +425,11 @@ def run_classification(
     }
     report_dict = classification_report(y_test, y_pred, labels=[0, 1], zero_division=0, output_dict=True)
 
-    # [수정 이유]
-    # confusion_matrix는 기본적으로 y_test와 y_pred에 실제로 등장한 class만 사용해 행렬을 만든다.
-    # 시간 순서 기반 split에서는 test 구간에 0 또는 1 한 class만 들어갈 수 있고,
-    # 이 경우 confusion_matrix 결과가 1x1이 되어 고정된 2x2 index/columns와 shape mismatch가 발생한다.
-    #
-    # [해결]
-    # labels=[0, 1]을 명시해 test set에 한 class만 존재하더라도 항상 2x2 confusion matrix가 생성되도록 한다.
+    # Fix:
+    # By default, confusion_matrix only includes classes that actually appear in y_test/y_pred.
+    # With a chronological split, the test period may contain only one class.
+    # Then confusion_matrix returns a 1x1 matrix, while the fixed row/column labels below expect 2x2.
+    # labels=[0, 1] forces a stable 2x2 confusion matrix even if one class is absent in the test set.
     confusion_df = pd.DataFrame(
         confusion_matrix(y_test, y_pred, labels=[0, 1]),
         index=["actual_0", "actual_1"],
@@ -464,7 +465,6 @@ def run_classification(
         plt.savefig(out / "classification_feature_importance_top10.png", dpi=300)
         plt.close()
 
-    # 4번 코드의 tree plot 아이디어를 유지하되 파일로 저장한다.
     try:
         tree_model = best_model.named_steps["classifier"]
         feature_names = best_model.named_steps["preprocess"].get_feature_names_out()
@@ -497,7 +497,7 @@ def run_classification(
 
 
 def extract_tree_feature_importance(model: Pipeline) -> pd.DataFrame:
-    """Decision Tree의 feature importance를 전처리 후 feature 이름과 함께 추출한다."""
+    """Extract Decision Tree feature importance with post-preprocessing feature names."""
     try:
         preprocessor = model.named_steps["preprocess"]
         classifier = model.named_steps["classifier"]
@@ -513,7 +513,7 @@ def extract_tree_feature_importance(model: Pipeline) -> pd.DataFrame:
 
 
 def evaluate_regression(y_true: pd.Series, y_pred: np.ndarray) -> Dict[str, float]:
-    """4번 회귀 코드의 MSE/RMSE/R2에 MAE를 추가한다."""
+    """Calculate MAE, MSE, RMSE, and R2 for regression evaluation."""
     mse = mean_squared_error(y_true, y_pred)
     return {
         "MAE": mean_absolute_error(y_true, y_pred),
@@ -533,7 +533,7 @@ def run_regression(
     test_size: float = 0.2,
     random_state: int = 42,
 ) -> Dict[str, Any]:
-    """4번 Linear Regression 코드를 다음날 가격 변동폭 예측으로 수정한 회귀 함수."""
+    """Run multiple linear regression, revised to predict next-day fuel price change amount."""
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
@@ -639,7 +639,7 @@ def run_regression(
 
 
 def extract_regression_coefficients(model: Pipeline, top_n: int = 30) -> pd.DataFrame:
-    """선형 회귀 계수를 feature 이름과 함께 추출한다."""
+    """Extract linear regression coefficients with post-preprocessing feature names."""
     try:
         feature_names = model.named_steps["preprocess"].get_feature_names_out()
         coefficients = model.named_steps["regressor"].coef_
@@ -661,10 +661,10 @@ def run_clustering(
     random_state: int = 42,
 ) -> Dict[str, Any]:
     """
-    4번 K-Means clustering 코드를 보조 분석으로 정리한다.
+    Run K-Means as a supporting analysis based on the role 4 clustering file.
 
-    기존 코드는 best_k=8을 하드코딩했지만,
-    최종 통합본은 silhouette score 기준으로 best_k를 자동 선택한다.
+    The submitted file hardcoded best_k=8.
+    This integrated version selects best_k using silhouette score.
     """
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -680,8 +680,8 @@ def run_clustering(
     available_cols = [col for col in clustering_cols if col in df.columns]
     X = df[available_cols].select_dtypes(include=[np.number]).dropna()
 
-    # K-Means도 거리 기반 모델이므로 스케일링이 필요하다.
-    # 3번 역할의 RobustScaler 방향과 맞추기 위해 clustering에서도 RobustScaler를 사용한다.
+    # K-Means is distance-based, so scaling is required.
+    # Use RobustScaler here as well to match the role 3 preprocessing decision.
     scaler = RobustScaler()
     X_scaled = scaler.fit_transform(X)
 
@@ -770,7 +770,7 @@ def run_clustering(
 
 
 def save_summary_json(summary: Dict[str, Any], output_path: str | Path) -> None:
-    """모델 핵심 결과를 JSON으로 저장한다."""
+    """Save the key final results as a JSON summary."""
     serializable = {}
     for key, value in summary.items():
         if isinstance(value, pd.DataFrame):
@@ -792,18 +792,17 @@ def save_summary_json(summary: Dict[str, Any], output_path: str | Path) -> None:
 
 def run_integrated_pipeline(
     csv_path: str | Path = DEFAULT_CSV_PATH,
-    output_dir: str | Path = "term_project_integrated_outputs_ko",
+    output_dir: str | Path = "term_project_integrated_outputs_en",
     test_size: float = 0.2,
     cv: int = 5,
     random_state: int = 42,
     run_cluster: bool = True,
 ) -> Dict[str, Any]:
     """
-    최종 통합 top-level function.
+    Final top-level integrated function.
 
-    과제 지침의 end-to-end process에 맞춰
-    EDA -> preprocessing -> classification -> regression -> optional clustering -> result saving
-    순서로 실행한다.
+    It follows the end-to-end project flow:
+    EDA -> preprocessing -> classification -> regression -> optional clustering -> output saving.
     """
     dirs = ensure_output_dirs(output_dir)
 
@@ -864,7 +863,7 @@ def run_integrated_pipeline(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run Team 3 integrated data science term project pipeline.")
     parser.add_argument("--csv-path", default=DEFAULT_CSV_PATH, help="Path to Iran_War_Global_Fuel_Crisis_Dirty_Dataset.csv")
-    parser.add_argument("--output-dir", default="term_project_integrated_outputs_ko", help="Directory to save outputs")
+    parser.add_argument("--output-dir", default="term_project_integrated_outputs_en", help="Directory to save outputs")
     parser.add_argument("--test-size", type=float, default=0.2, help="Test data ratio")
     parser.add_argument("--cv", type=int, default=5, help="Number of cross-validation folds")
     parser.add_argument("--random-state", type=int, default=42, help="Random seed")
