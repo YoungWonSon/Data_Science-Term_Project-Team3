@@ -613,7 +613,7 @@ def run_clustering(cleaned_df):
     X_scaled = cluster_preprocessor.fit_transform(X)
 
     k_results = []
-    max_k = min(11, len(cluster_df) - 1)
+    max_k = len(clustering_cols) * 2
     # 여러 k 값을 비교한다.
     # inertia는 cluster 내부 거리 합이므로 낮을수록 응집도가 좋다.
     # silhouette score는 군집 내부 응집도와 군집 간 분리도를 함께 보며,
@@ -691,6 +691,46 @@ def run_clustering(cleaned_df):
 
     print(f"[CLUSTERING] Best k: {best_k}")
     print(f"[CLUSTERING] Best silhouette score: {metrics['best_silhouette_score']:.4f}")
+
+    plot_df = cluster_df.copy()
+    plot_df["Date"] = pd.to_datetime(plot_df["Date"], errors="coerce")
+
+    # Country는 문자형 categorical 데이터이므로 y축에 표시하기 위해 숫자 코드로 변환
+    countries = sorted(plot_df["Country"].unique())
+    plot_df["Country_Code"] = pd.Categorical(
+        plot_df["Country"],
+        categories=countries,
+        ordered=True
+    ).codes
+
+    plt.figure(figsize=(10, 6))
+
+    scatter = plt.scatter(
+        plot_df["Date"],
+        plot_df["Country_Code"],
+        c=plot_df["Cluster"],
+        cmap="tab10" if best_k <= 10 else "tab20",
+        alpha=0.75,
+        s=35
+    )
+
+    plt.title(f"K-Means Clustering by Date and Country (k={best_k})")
+    plt.xlabel("Date")
+    plt.ylabel("Country")
+
+    plt.yticks(range(len(countries)), countries)
+
+    plt.xticks(rotation=45)
+
+    cbar = plt.colorbar(scatter)
+    cbar.set_label("Cluster")
+    cbar.set_ticks(sorted(plot_df["Cluster"].unique()))
+
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(FIGURE_DIR / "clustering_date_country_scatter.png", dpi=150)
+    plt.close()
+
     return metrics
 
 
