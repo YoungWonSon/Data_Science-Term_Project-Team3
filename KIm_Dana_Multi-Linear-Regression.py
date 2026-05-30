@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import LinearRegression, Ridge
 from sklearn.metrics import mean_squared_error, r2_score
 from Kim_Dana_Standarization_Data import df_standardized
 
@@ -13,18 +13,22 @@ print(df_standardized.head())
 
 
 # 2. Target column 설정, 예측하고 싶은 컬럼(다른 것으로 얼마든지 대체 가능)
-target_col = "Fuel_Price_Local"
+target_col = "Fuel_Price_Change_Percent"
 
 # 3. 필요하지 않은 컬럼 제거, Date는 문자열/날짜형이므로 Linear Regression에 바로 넣기 어려움
 # target_col은 y로 따로 분리해야 하므로 X에서 제거
 X = df_standardized.drop(columns=["Date", target_col])
-y = df_standardized[target_col]
 
-# NaN 제거 후 다시 X, y 분리
+country_cols = [col for col in X.columns if col.startswith("Country_")]
+y = df_standardized[target_col]
+X = X.drop(columns=country_cols)
+
 model_df = pd.concat([X, y], axis=1)
 model_df = model_df.dropna()
+
 X = model_df.drop(columns=[target_col])
 y = model_df[target_col]
+print(model_df.head())
 
 # 4. Train / Test Split
 # 데이터를 학습용 80%, 테스트용 20%로 나눔
@@ -32,11 +36,15 @@ X_train, X_test, y_train, y_test = train_test_split(
     X,
     y,
     test_size=0.2,
-    shuffle=False
+    shuffle=True,
+    random_state=42
 )
-
+'''
 # 5. Multiple Linear Regression 모델 생성 및 학습
 mlr_model = LinearRegression()
+mlr_model.fit(X_train, y_train)
+'''
+mlr_model = Ridge(alpha=1.0)
 mlr_model.fit(X_train, y_train)
 
 # 6. 예측
@@ -116,7 +124,7 @@ plt.plot(
 )
 
 plt.title("Actual vs Predicted Values")
-plt.xlabel("Actual Fuel_Price_Local")
-plt.ylabel("Predicted Fuel_Price_Local")
+plt.xlabel("Actual Fuel_Price_Change_Percent")
+plt.ylabel("Predicted Fuel_Price_Change_Percent")
 plt.grid(True)
 plt.show()
