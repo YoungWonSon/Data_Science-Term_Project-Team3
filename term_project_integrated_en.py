@@ -29,6 +29,7 @@ from sklearn.model_selection import GridSearchCV, cross_val_score, train_test_sp
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, RobustScaler
 from sklearn.tree import DecisionTreeClassifier, plot_tree
+from matplotlib.colors import ListedColormap, BoundaryNorm
 
 
 # ============================================================
@@ -524,7 +525,7 @@ def run_regression(cleaned_df):
             # As in classification, preprocessing and modeling are combined in one Pipeline
             # so the fit/transform order remains safe after the train/test split.
             ("preprocessor", preprocessor),
-            ("model", Ridge(alpha=1.0)),
+            ("model", Ridge(alpha=3.0)),
         ]
     )
     regression_model.fit(X_train, y_train)
@@ -538,7 +539,7 @@ def run_regression(cleaned_df):
     r2 = r2_score(y_test, y_pred)
 
     metrics = {
-        "model": "Ridge(alpha=1.0)",
+        "model": "Ridge(alpha=3.0)",
         "target": "Fuel_Price_Change_Percent",
         "test_mse": float(mse),
         "test_rmse": rmse,
@@ -570,6 +571,11 @@ def run_regression(cleaned_df):
     min_value = min(y_test.min(), y_pred.min())
     max_value = max(y_test.max(), y_pred.max())
     plt.plot([min_value, max_value], [min_value, max_value], linestyle="--")
+
+    slope, intercept = np.polyfit(y_test, y_pred, 1)
+    x_line = np.linspace(min_value, max_value, 200)
+    y_line = slope * x_line + intercept
+    plt.plot( x_line, y_line, label="Ridge Trend Line")
     plt.title("Actual vs Predicted Fuel Price Change Percent")
     plt.xlabel("Actual Fuel_Price_Change_Percent")
     plt.ylabel("Predicted Fuel_Price_Change_Percent")
@@ -672,8 +678,10 @@ def run_clustering(cleaned_df):
     # K-Means itself is fitted in the original scaled feature space.
     pca = PCA(n_components=2, random_state=42)
     X_pca = pca.fit_transform(X_scaled)
+    centers_pca = pca.transform(best_kmeans.cluster_centers_)
     plt.figure(figsize=(8, 6))
     plt.scatter(X_pca[:, 0], X_pca[:, 1], c=cluster_df["Cluster"], alpha=0.7)
+    plt.scatter(centers_pca[:, 0], centers_pca[:, 1], c="black", marker="o", s=30, label="Cluster Centers")
     plt.title(f"K-Means Clustering PCA View (k={best_k})")
     plt.xlabel("PCA Component 1")
     plt.ylabel("PCA Component 2")
@@ -693,32 +701,44 @@ def run_clustering(cleaned_df):
         categories=countries,
         ordered=True
     ).codes
+    
+    cluster_labels = sorted(plot_df["Cluster"].unique())
+    n_clusters = len(cluster_labels)
+
+    # tab10에서 실제 클러스터 개수만큼만 색상 사용
+    base_cmap = plt.get_cmap("tab10")
+    colors = base_cmap(range(n_clusters))
+    cmap = ListedColormap(colors)
+
+    # 클러스터 라벨을 0부터 연속된 코드로 변환
+    cluster_to_code = {label: i for i, label in enumerate(cluster_labels)}
+    plot_df["Cluster_Code"] = plot_df["Cluster"].map(cluster_to_code)
+
+    bounds = range(n_clusters + 1)
+    norm = BoundaryNorm(bounds, cmap.N)
 
     plt.figure(figsize=(10, 6))
 
     scatter = plt.scatter(
         plot_df["Date"],
         plot_df["Country_Code"],
-        c=plot_df["Cluster"],
-        cmap="tab10" if best_k <= 10 else "tab20",
+        c=plot_df["Cluster_Code"],
+        cmap=cmap,
+        norm=norm,
         alpha=0.75,
         s=35
     )
 
-    plt.title(f"K-Means Clustering by Date and Country (k={best_k})")
+    plt.title(f"K-Means Clustering by Date and Country (k={n_clusters})")
     plt.xlabel("Date")
     plt.ylabel("Country")
 
-    # Display country names instead of numeric country codes on the y-axis.
     plt.yticks(range(len(countries)), countries)
-
-    # Rotate x-axis date labels to improve readability.
     plt.xticks(rotation=45)
 
-    # Add a color bar to show the cluster number represented by each color.
-    cbar = plt.colorbar(scatter)
+    cbar = plt.colorbar(scatter, ticks=range(n_clusters))
     cbar.set_label("Cluster")
-    cbar.set_ticks(sorted(plot_df["Cluster"].unique()))
+    cbar.set_ticklabels(cluster_labels)
 
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
